@@ -1,0 +1,54 @@
+# 摄影工作目录
+WORK_DIR="$HOME/Pictures/Photography_Work"
+
+# 提醒事项列表名称
+REMINDER_LIST_NAME="摄影工作流"
+
+# 是否自动创建项目内部目录
+AUTO_CREATE_PROJECT_STRUCTURE=true
+
+# 新项目默认子目录
+PROJECT_SUBDIRECTORIES=(
+  "01_RAW"
+  "02_EXPORT"
+  "03_PRINT"
+  "99_REFERENCE"
+)
+
+# 提醒时间，24 小时制
+REMINDER_HOUR=20
+REMINDER_MINUTE=0
+
+TASK_1_NAME="① 初筛废片"
+TASK_1_DAYS=1
+TASK_1_DESCRIPTION="删除严重失焦、误触快门、明显重复和完全不可用的照片。"
+
+TASK_2_NAME="② 精选待修照片"
+TASK_2_DAYS=3
+TASK_2_DESCRIPTION="从保留照片中选出值得调色、精修和交付的照片。"
+
+TASK_3_NAME="③ 调色与精修"
+TASK_3_DAYS=7
+TASK_3_DESCRIPTION="完成调色、局部调整和必要的深度修图。"
+
+TASK_4_NAME="④ 导出、备份与归档"
+TASK_4_DAYS=10
+TASK_4_DESCRIPTION="导出最终成片，确认备份，并将精选照片加入作品集或 iCloud。"
+
+# 是否启用外接硬盘备份
+ENABLE_BACKUP=false
+
+# Finder 中显示的外接硬盘名称
+BACKUP_VOLUME_NAME="PhotographySSD"
+
+# 外接硬盘目标目录
+BACKUP_DESTINATION="/Volumes/$BACKUP_VOLUME_NAME/Photography/01_Projects"
+
+# 默认禁止同步删除
+BACKUP_ALLOW_DELETE=false
+
+# 定时补偿扫描间隔，单位为秒
+SCAN_INTERVAL=300
+
+# 启用备份后，后台同步间隔，单位为秒
+SYNC_INTERVAL=3600
