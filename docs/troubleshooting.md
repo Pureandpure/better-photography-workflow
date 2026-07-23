@@ -58,3 +58,11 @@ Run `bpw install` after changing `WORK_DIR`, `SCAN_INTERVAL`, or `SYNC_INTERVAL`
 - `24`: source files disappeared during the run; often transient, retry once capture/import activity settles.
 
 The exact rsync code is preserved for scripts and diagnostics.
+
+## A scan or sync says another task is running
+
+Run `bpw doctor`. Active locks are preserved. Locks left by a crash, forced termination, or reboot are reported as stale and automatically reclaimed on the next `bpw scan` or `bpw sync`; manual state deletion is not required.
+
+## Backup destination is rejected as unsafe
+
+The destination may not contain symbolic links, leave `/Volumes/<configured name>`, or cross onto another filesystem. Choose a normal directory physically stored on the configured external volume. This check also applies when deletion mode is disabled.

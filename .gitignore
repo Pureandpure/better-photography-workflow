@@ -5,3 +5,5 @@
 *.swp
 .idea/
 .vscode/
+app/.build/
+app/dist/

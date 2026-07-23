@@ -30,6 +30,11 @@ better-photography-workflow (bpw)
   status              显示配置、项目、备份与后台任务状态
   doctor              检查运行环境、权限、配置和服务
   logs                显示主日志最近 100 行
+  app                 打开图形界面
+  version             显示版本
+  config export       以 JSON 输出当前有效配置
+  config apply <文件> 校验并保存 plist 或 JSON 配置
+  config path         显示图形界面配置文件路径
   help                显示本帮助
 EOF
 }
@@ -102,6 +107,9 @@ command_status() {
   print -r -- "外接硬盘已连接：$mounted"
   print -r -- "扫描服务：$watch"
   print -r -- "备份服务：$sync"
+  print -r -- "最近扫描：$(bpw_operation_status_summary scan)"
+  print -r -- "最近同步：$(bpw_operation_status_summary sync)"
+  print -r -- "最近成功同步：$(bpw_last_success_timestamp sync)"
 }
 
 command_logs() {
@@ -111,6 +119,41 @@ command_logs() {
   else
     print -r -- "尚无日志：$BPW_MAIN_LOG"
   fi
+}
+
+command_app() {
+  (( $# == 0 )) || { bpw_error "bpw app 不接受参数"; return 2; }
+  local app_bundle="${BPW_APP_BUNDLE:-$HOME/Applications/摄影工作流.app}"
+  [[ -d "$app_bundle" ]] || {
+    bpw_error "找不到图形界面：$app_bundle"
+    print -u2 -- "请先运行：./app/build-app.sh，然后将“摄影工作流.app”放到 ~/Applications。"
+    return 1
+  }
+  open "$app_bundle" || { bpw_error "无法打开图形界面：$app_bundle"; return 1; }
+  print -r -- "已打开图形界面：$app_bundle"
+}
+
+command_config() {
+  local action="${1:-}"
+  (( $# > 0 )) && shift
+  case "$action" in
+    export)
+      (( $# == 0 )) || { bpw_error "用法：bpw config export"; return 2; }
+      bpw_emit_effective_config_json
+      ;;
+    apply)
+      (( $# == 1 )) || { bpw_error "用法：bpw config apply <plist-or-json>"; return 2; }
+      bpw_apply_plist_config "${1:A}"
+      ;;
+    path)
+      (( $# == 0 )) || { bpw_error "用法：bpw config path"; return 2; }
+      print -r -- "$BPW_PLIST_CONFIG_FILE"
+      ;;
+    *)
+      bpw_error "用法：bpw config <export|apply|path>"
+      return 2
+      ;;
+  esac
 }
 
 command_name="${1:-help}"
@@ -125,6 +168,9 @@ case "$command_name" in
   status) (( $# == 0 )) || { bpw_error "bpw status 不接受参数"; exit 2; }; command_status ;;
   doctor) (( $# == 0 )) || { bpw_error "bpw doctor 不接受参数"; exit 2; }; BPW_CLI_PATH="${0:A}" "$BPW_ROOT/scripts/doctor.sh" ;;
   logs) (( $# == 0 )) || { bpw_error "bpw logs 不接受参数"; exit 2; }; command_logs ;;
+  app) command_app "$@" ;;
+  version) (( $# == 0 )) || { bpw_error "bpw version 不接受参数"; exit 2; }; print -r -- "bpw $BPW_VERSION" ;;
+  config) command_config "$@" ;;
   help|-h|--help) usage ;;
   *) bpw_error "未知命令：$command_name"; usage >&2; exit 2 ;;
 esac

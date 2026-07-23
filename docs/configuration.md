@@ -6,6 +6,14 @@ The installed config is:
 ~/.config/better-photography-workflow/config
 ```
 
+The SwiftUI application writes a validated, non-executable configuration to:
+
+```text
+~/.config/better-photography-workflow/config.plist
+```
+
+When `config.plist` exists it takes precedence. The original zsh config is retained for migration and rollback. Use `bpw config export` to inspect the effective configuration and `bpw config apply <file>` to validate and atomically install plist or JSON input.
+
 `bpw init` copies the complete example and never overwrites an existing file. The main settings are:
 
 - `WORK_DIR`: absolute project workspace path.
@@ -25,7 +33,7 @@ Example:
 
 ```zsh
 WORK_DIR="$HOME/Pictures/Photography_Work"
-REMINDER_LIST_NAME="摄影工作流"
+REMINDER_LIST_NAME="🍎摄影工作流"
 REMINDER_HOUR=20
 REMINDER_MINUTE=0
 ENABLE_BACKUP=false

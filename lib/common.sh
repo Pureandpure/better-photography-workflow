@@ -5,24 +5,28 @@
 # bpw_load_config applies basic ownership and permission checks before sourcing.
 
 BPW_APP_NAME="better-photography-workflow"
+BPW_VERSION="0.3.1"
 BPW_WATCH_LABEL="com.better-photography-workflow.watch"
 BPW_SYNC_LABEL="com.better-photography-workflow.sync"
+BPW_LOG_MAX_BYTES=1048576
+BPW_LOG_BACKUP_COUNT=3
 
 bpw_set_runtime_paths() {
   : "${XDG_CONFIG_HOME:=$HOME/.config}"
   : "${XDG_STATE_HOME:=$HOME/.local/state}"
   : "${XDG_DATA_HOME:=$HOME/.local/share}"
   : "${BPW_CONFIG_FILE:=$XDG_CONFIG_HOME/$BPW_APP_NAME/config}"
+  : "${BPW_PLIST_CONFIG_FILE:=${BPW_CONFIG_FILE:h}/config.plist}"
   : "${BPW_STATE_DIR:=$XDG_STATE_HOME/$BPW_APP_NAME}"
   : "${BPW_LOG_DIR:=$BPW_STATE_DIR/logs}"
   : "${BPW_MAIN_LOG:=$BPW_LOG_DIR/bpw.log}"
   : "${BPW_INSTALL_ROOT:=$XDG_DATA_HOME/$BPW_APP_NAME}"
-  export BPW_CONFIG_FILE BPW_STATE_DIR BPW_LOG_DIR BPW_MAIN_LOG BPW_INSTALL_ROOT
+  export BPW_CONFIG_FILE BPW_PLIST_CONFIG_FILE BPW_STATE_DIR BPW_LOG_DIR BPW_MAIN_LOG BPW_INSTALL_ROOT
 }
 
 bpw_set_defaults() {
   WORK_DIR="$HOME/Pictures/Photography_Work"
-  REMINDER_LIST_NAME="摄影工作流"
+  REMINDER_LIST_NAME="🍎摄影工作流"
   AUTO_CREATE_PROJECT_STRUCTURE=true
   PROJECT_SUBDIRECTORIES=("01_RAW" "02_EXPORT" "03_PRINT" "99_REFERENCE")
   REMINDER_HOUR=20
@@ -57,6 +61,43 @@ bpw_prepare_runtime_dirs() {
   touch "$BPW_MAIN_LOG" || return 1
 }
 
+bpw_file_size() {
+  local file="$1"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    stat -f '%z' "$file" 2>/dev/null
+  else
+    stat -c '%s' "$file" 2>/dev/null
+  fi
+}
+
+bpw_file_mtime() {
+  local file="$1"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    stat -f '%m' "$file" 2>/dev/null
+  else
+    stat -c '%Y' "$file" 2>/dev/null
+  fi
+}
+
+bpw_rotate_log() {
+  local file="$1" size index
+  [[ -f "$file" ]] || return 0
+  size="$(bpw_file_size "$file")" || return 0
+  (( size >= BPW_LOG_MAX_BYTES )) || return 0
+
+  local rotation_lock="$BPW_LOG_DIR/.rotation.lock"
+  mkdir "$rotation_lock" 2>/dev/null || return 0
+  size="$(bpw_file_size "$file")" || size=0
+  if (( size >= BPW_LOG_MAX_BYTES )); then
+    for (( index = BPW_LOG_BACKUP_COUNT; index >= 2; index-- )); do
+      [[ -f "$file.$((index - 1))" ]] && mv -f "$file.$((index - 1))" "$file.$index"
+    done
+    mv -f "$file" "$file.1" && touch "$file"
+    chmod 600 "$file" 2>/dev/null || true
+  fi
+  rmdir "$rotation_lock" 2>/dev/null || true
+}
+
 bpw_log() {
   local level="$1"
   shift
@@ -64,6 +105,7 @@ bpw_log() {
   print -r -- "$line"
   if [[ -n "${BPW_MAIN_LOG:-}" ]]; then
     mkdir -p "${BPW_MAIN_LOG:h}" 2>/dev/null || true
+    bpw_rotate_log "$BPW_MAIN_LOG"
     print -r -- "$line" >> "$BPW_MAIN_LOG" 2>/dev/null || true
   fi
 }
@@ -175,6 +217,16 @@ bpw_validate_config() {
 bpw_load_config() {
   bpw_set_runtime_paths
   bpw_set_defaults
+  if [[ -e "$BPW_PLIST_CONFIG_FILE" ]]; then
+    bpw_config_file_is_trusted "$BPW_PLIST_CONFIG_FILE" || return 1
+    plutil -lint "$BPW_PLIST_CONFIG_FILE" >/dev/null 2>&1 || {
+      bpw_error "plist 配置文件无效：$BPW_PLIST_CONFIG_FILE"
+      return 1
+    }
+    bpw_load_plist_values "$BPW_PLIST_CONFIG_FILE" || return 1
+    bpw_validate_config
+    return
+  fi
   [[ -f "$BPW_CONFIG_FILE" ]] || {
     bpw_error "找不到配置文件：$BPW_CONFIG_FILE（请先运行 bpw init）"
     return 1
@@ -190,6 +242,115 @@ bpw_load_config() {
     return 1
   }
   bpw_validate_config
+}
+
+bpw_plist_value() {
+  local file="$1" key="$2"
+  plutil -extract "$key" raw -o - "$file" 2>/dev/null
+}
+
+bpw_load_plist_values() {
+  local file="$1" schema count index
+  schema="$(bpw_plist_value "$file" SCHEMA_VERSION)" || return 1
+  [[ "$schema" == 1 ]] || { bpw_error "不支持的配置版本：$schema"; return 1; }
+
+  WORK_DIR="$(bpw_plist_value "$file" WORK_DIR)" || return 1
+  REMINDER_LIST_NAME="$(bpw_plist_value "$file" REMINDER_LIST_NAME)" || return 1
+  AUTO_CREATE_PROJECT_STRUCTURE="$(bpw_plist_value "$file" AUTO_CREATE_PROJECT_STRUCTURE)" || return 1
+  REMINDER_HOUR="$(bpw_plist_value "$file" REMINDER_HOUR)" || return 1
+  REMINDER_MINUTE="$(bpw_plist_value "$file" REMINDER_MINUTE)" || return 1
+  TASK_1_NAME="$(bpw_plist_value "$file" TASK_1_NAME)" || return 1
+  TASK_1_DAYS="$(bpw_plist_value "$file" TASK_1_DAYS)" || return 1
+  TASK_1_DESCRIPTION="$(bpw_plist_value "$file" TASK_1_DESCRIPTION)" || return 1
+  TASK_2_NAME="$(bpw_plist_value "$file" TASK_2_NAME)" || return 1
+  TASK_2_DAYS="$(bpw_plist_value "$file" TASK_2_DAYS)" || return 1
+  TASK_2_DESCRIPTION="$(bpw_plist_value "$file" TASK_2_DESCRIPTION)" || return 1
+  TASK_3_NAME="$(bpw_plist_value "$file" TASK_3_NAME)" || return 1
+  TASK_3_DAYS="$(bpw_plist_value "$file" TASK_3_DAYS)" || return 1
+  TASK_3_DESCRIPTION="$(bpw_plist_value "$file" TASK_3_DESCRIPTION)" || return 1
+  TASK_4_NAME="$(bpw_plist_value "$file" TASK_4_NAME)" || return 1
+  TASK_4_DAYS="$(bpw_plist_value "$file" TASK_4_DAYS)" || return 1
+  TASK_4_DESCRIPTION="$(bpw_plist_value "$file" TASK_4_DESCRIPTION)" || return 1
+  ENABLE_BACKUP="$(bpw_plist_value "$file" ENABLE_BACKUP)" || return 1
+  BACKUP_VOLUME_NAME="$(bpw_plist_value "$file" BACKUP_VOLUME_NAME)" || return 1
+  BACKUP_DESTINATION="$(bpw_plist_value "$file" BACKUP_DESTINATION)" || return 1
+  BACKUP_ALLOW_DELETE="$(bpw_plist_value "$file" BACKUP_ALLOW_DELETE)" || return 1
+  SCAN_INTERVAL="$(bpw_plist_value "$file" SCAN_INTERVAL)" || return 1
+  SYNC_INTERVAL="$(bpw_plist_value "$file" SYNC_INTERVAL)" || return 1
+
+  count="$(plutil -extract PROJECT_SUBDIRECTORIES raw -o - "$file" 2>/dev/null)" || return 1
+  bpw_is_unsigned_integer "$count" || return 1
+  PROJECT_SUBDIRECTORIES=()
+  for (( index = 0; index < count; index++ )); do
+    PROJECT_SUBDIRECTORIES+=("$(bpw_plist_value "$file" "PROJECT_SUBDIRECTORIES.$index")") || return 1
+  done
+}
+
+bpw_plist_insert_string() {
+  plutil -insert "$2" -string "$3" "$1" >/dev/null
+}
+
+bpw_plist_insert_integer() {
+  plutil -insert "$2" -integer "$3" "$1" >/dev/null
+}
+
+bpw_plist_insert_boolean() {
+  plutil -insert "$2" -bool "$3" "$1" >/dev/null
+}
+
+bpw_emit_effective_config_json() {
+  bpw_load_config || return 1
+  local temp subdir
+  temp="$(mktemp "${TMPDIR:-/tmp}/bpw-config.XXXXXX")" || return 1
+  plutil -create xml1 "$temp" || { rm -f "$temp"; return 1; }
+  bpw_plist_insert_integer "$temp" SCHEMA_VERSION 1 || return 1
+  bpw_plist_insert_string "$temp" WORK_DIR "$WORK_DIR" || return 1
+  bpw_plist_insert_string "$temp" REMINDER_LIST_NAME "$REMINDER_LIST_NAME" || return 1
+  bpw_plist_insert_boolean "$temp" AUTO_CREATE_PROJECT_STRUCTURE "$AUTO_CREATE_PROJECT_STRUCTURE" || return 1
+  plutil -insert PROJECT_SUBDIRECTORIES -array "$temp" >/dev/null || return 1
+  for subdir in "${PROJECT_SUBDIRECTORIES[@]}"; do
+    plutil -insert PROJECT_SUBDIRECTORIES -string "$subdir" -append "$temp" >/dev/null || return 1
+  done
+  bpw_plist_insert_integer "$temp" REMINDER_HOUR "$REMINDER_HOUR" || return 1
+  bpw_plist_insert_integer "$temp" REMINDER_MINUTE "$REMINDER_MINUTE" || return 1
+  bpw_plist_insert_string "$temp" TASK_1_NAME "$TASK_1_NAME" || return 1
+  bpw_plist_insert_integer "$temp" TASK_1_DAYS "$TASK_1_DAYS" || return 1
+  bpw_plist_insert_string "$temp" TASK_1_DESCRIPTION "$TASK_1_DESCRIPTION" || return 1
+  bpw_plist_insert_string "$temp" TASK_2_NAME "$TASK_2_NAME" || return 1
+  bpw_plist_insert_integer "$temp" TASK_2_DAYS "$TASK_2_DAYS" || return 1
+  bpw_plist_insert_string "$temp" TASK_2_DESCRIPTION "$TASK_2_DESCRIPTION" || return 1
+  bpw_plist_insert_string "$temp" TASK_3_NAME "$TASK_3_NAME" || return 1
+  bpw_plist_insert_integer "$temp" TASK_3_DAYS "$TASK_3_DAYS" || return 1
+  bpw_plist_insert_string "$temp" TASK_3_DESCRIPTION "$TASK_3_DESCRIPTION" || return 1
+  bpw_plist_insert_string "$temp" TASK_4_NAME "$TASK_4_NAME" || return 1
+  bpw_plist_insert_integer "$temp" TASK_4_DAYS "$TASK_4_DAYS" || return 1
+  bpw_plist_insert_string "$temp" TASK_4_DESCRIPTION "$TASK_4_DESCRIPTION" || return 1
+  bpw_plist_insert_boolean "$temp" ENABLE_BACKUP "$ENABLE_BACKUP" || return 1
+  bpw_plist_insert_string "$temp" BACKUP_VOLUME_NAME "$BACKUP_VOLUME_NAME" || return 1
+  bpw_plist_insert_string "$temp" BACKUP_DESTINATION "$BACKUP_DESTINATION" || return 1
+  bpw_plist_insert_boolean "$temp" BACKUP_ALLOW_DELETE "$BACKUP_ALLOW_DELETE" || return 1
+  bpw_plist_insert_integer "$temp" SCAN_INTERVAL "$SCAN_INTERVAL" || return 1
+  bpw_plist_insert_integer "$temp" SYNC_INTERVAL "$SYNC_INTERVAL" || return 1
+  plutil -convert json -o - "$temp"
+  local command_status=$?
+  rm -f "$temp"
+  return "$command_status"
+}
+
+bpw_apply_plist_config() {
+  local source_file="$1" temp
+  [[ -f "$source_file" && ! -L "$source_file" ]] || { bpw_error "配置输入必须是普通文件"; return 1; }
+  mkdir -p "${BPW_PLIST_CONFIG_FILE:h}" || return 1
+  temp="$BPW_PLIST_CONFIG_FILE.tmp.$$"
+  cp "$source_file" "$temp" || return 1
+  plutil -convert xml1 "$temp" >/dev/null 2>&1 || { rm -f "$temp"; bpw_error "配置输入不是有效 plist 或 JSON"; return 1; }
+  plutil -lint "$temp" >/dev/null 2>&1 || { rm -f "$temp"; bpw_error "配置输入不是有效 plist 或 JSON"; return 1; }
+  bpw_set_defaults
+  bpw_load_plist_values "$temp" || { rm -f "$temp"; bpw_error "配置字段不完整或类型错误"; return 1; }
+  bpw_validate_config || { rm -f "$temp"; return 1; }
+  chmod 600 "$temp" || { rm -f "$temp"; return 1; }
+  mv -f "$temp" "$BPW_PLIST_CONFIG_FILE" || return 1
+  print -r -- "配置已保存：$BPW_PLIST_CONFIG_FILE"
 }
 
 bpw_state_id() {
@@ -226,6 +387,106 @@ bpw_mark_project_processed() {
   mv -f "$temp" "$marker"
 }
 
+bpw_process_identity() {
+  local pid="$1" identity
+  identity="$(ps -p "$pid" -o lstart= 2>/dev/null)" || return 1
+  identity="$(print -r -- "$identity" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [[ -n "$identity" ]] || return 1
+  print -r -- "$identity"
+}
+
+bpw_lock_is_active() {
+  local lock_dir="$1" pid stored_identity current_identity
+  local owner_file="$lock_dir/owner"
+  [[ -f "$owner_file" && ! -L "$owner_file" ]] || return 1
+  pid="$(sed -n 's/^pid=//p' "$owner_file" | head -n 1)"
+  stored_identity="$(sed -n 's/^identity=//p' "$owner_file" | head -n 1)"
+  bpw_is_unsigned_integer "$pid" || return 1
+  current_identity="$(bpw_process_identity "$pid")" || return 1
+  [[ -n "$stored_identity" && "$current_identity" == "$stored_identity" ]]
+}
+
+bpw_acquire_lock() {
+  local lock_dir="$1" purpose="$2" attempt owner_file identity
+  for attempt in 1 2; do
+    if mkdir "$lock_dir" 2>/dev/null; then
+      owner_file="$lock_dir/owner"
+      identity="$(bpw_process_identity $$)" || identity="unknown-$$"
+      {
+        print -r -- "pid=$$"
+        print -r -- "identity=$identity"
+        print -r -- "purpose=$purpose"
+        print -r -- "started_at=$(bpw_timestamp)"
+      } > "$owner_file" || {
+        rmdir "$lock_dir" 2>/dev/null || true
+        return 1
+      }
+      chmod 600 "$owner_file" 2>/dev/null || true
+      return 0
+    fi
+    bpw_lock_is_active "$lock_dir" && return 1
+    if [[ ! -e "$lock_dir/owner" ]]; then
+      local lock_mtime now
+      lock_mtime="$(bpw_file_mtime "$lock_dir")" || return 1
+      now="$(date +%s)"
+      (( now - lock_mtime >= 10 )) || return 1
+    fi
+    rm -f "$lock_dir/owner" 2>/dev/null || return 1
+    rmdir "$lock_dir" 2>/dev/null || return 1
+    bpw_log WARN "已回收失效锁：$lock_dir"
+  done
+  return 1
+}
+
+bpw_release_lock() {
+  local lock_dir="$1" pid
+  local owner_file="$lock_dir/owner"
+  [[ -d "$lock_dir" && -f "$owner_file" ]] || return 0
+  pid="$(sed -n 's/^pid=//p' "$owner_file" | head -n 1)"
+  [[ "$pid" == "$$" ]] || return 0
+  rm -f "$owner_file" 2>/dev/null || return 1
+  rmdir "$lock_dir" 2>/dev/null || return 1
+}
+
+bpw_write_operation_status() {
+  local operation="$1" outcome="$2" exit_code="$3" detail="$4" duration="$5"
+  local file="$BPW_STATE_DIR/last-$operation.status" temp now
+  now="$(bpw_timestamp)"
+  detail="${detail//$'\n'/ }"
+  temp="$file.tmp.$$"
+  umask 077
+  {
+    print -r -- "timestamp=$now"
+    print -r -- "outcome=$outcome"
+    print -r -- "exit_code=$exit_code"
+    print -r -- "duration_seconds=$duration"
+    print -r -- "detail=$detail"
+  } > "$temp" || return 1
+  mv -f "$temp" "$file" || return 1
+  if [[ "$outcome" == success ]]; then
+    cp -f "$file" "$BPW_STATE_DIR/last-$operation-success.status" 2>/dev/null || true
+  fi
+}
+
+bpw_operation_status_summary() {
+  local operation="$1"
+  local file="$BPW_STATE_DIR/last-$operation.status"
+  local timestamp outcome duration detail
+  [[ -f "$file" ]] || { print -r -- "从未运行"; return 0; }
+  timestamp="$(sed -n 's/^timestamp=//p' "$file" | head -n 1)"
+  outcome="$(sed -n 's/^outcome=//p' "$file" | head -n 1)"
+  duration="$(sed -n 's/^duration_seconds=//p' "$file" | head -n 1)"
+  detail="$(sed -n 's/^detail=//p' "$file" | head -n 1)"
+  print -r -- "$timestamp；$outcome；${duration:-0}s；$detail"
+}
+
+bpw_last_success_timestamp() {
+  local operation="$1"
+  local file="$BPW_STATE_DIR/last-$operation-success.status"
+  [[ -f "$file" ]] || { print -r -- "从未成功"; return 0; }
+  sed -n 's/^timestamp=//p' "$file" | head -n 1
+}
+
 bpw_project_epoch() {
   local project_dir="$1" epoch
   if [[ "$(uname -s)" == Darwin ]]; then
@@ -256,6 +517,80 @@ bpw_volume_is_mounted() {
   command -v diskutil >/dev/null 2>&1 || return 1
   diskutil info "$volume_root" >/dev/null 2>&1 || return 1
   bpw_mount_table_contains "$volume_root" < <(/sbin/mount)
+}
+
+bpw_prepare_destination_within_volume() {
+  local volume_root="$1" destination="$2"
+  local relative current component volume_real current_real
+  local volume_device current_device
+
+  [[ -d "$volume_root" && ! -L "$volume_root" ]] || {
+    bpw_error "外接卷挂载点无效或为符号链接：$volume_root"
+    return 1
+  }
+  [[ "$destination" == "$volume_root" || "$destination" == "$volume_root"/* ]] || {
+    bpw_error "备份目标不在配置的外接卷中：$destination"
+    return 1
+  }
+  volume_real="${volume_root:A}"
+  volume_device="$(stat -f '%d' "$volume_root" 2>/dev/null)" || return 1
+  relative="${destination#$volume_root}"
+  current="$volume_root"
+
+  local -a components
+  components=("${(@s:/:)relative}")
+  for component in "${components[@]}"; do
+    [[ -n "$component" ]] || continue
+    current="$current/$component"
+    if [[ -L "$current" ]]; then
+      bpw_error "备份目标路径包含符号链接，拒绝同步：$current"
+      return 1
+    fi
+    if [[ -e "$current" ]]; then
+      [[ -d "$current" ]] || { bpw_error "备份目标路径不是目录：$current"; return 1; }
+    else
+      mkdir "$current" || { bpw_error "无法创建备份目标：$current"; return 1; }
+    fi
+    current_real="${current:A}"
+    [[ "$current_real" == "$volume_real" || "$current_real" == "$volume_real"/* ]] || {
+      bpw_error "备份目标真实路径逃离外接卷：$current_real"
+      return 1
+    }
+    current_device="$(stat -f '%d' "$current" 2>/dev/null)" || return 1
+    [[ "$current_device" == "$volume_device" ]] || {
+      bpw_error "备份目标不属于配置的外接卷：$current"
+      return 1
+    }
+  done
+  [[ -d "$destination" && ! -L "$destination" ]]
+}
+
+bpw_prepare_backup_destination() {
+  bpw_prepare_destination_within_volume "/Volumes/$BACKUP_VOLUME_NAME" "$BACKUP_DESTINATION"
+}
+
+bpw_run_rsync() {
+  local source_dir="$1" destination="$2" allow_delete="$3"
+  local -a rsync_args
+  rsync_args=(
+    -a
+    --human-readable
+    --itemize-changes
+    --partial
+    --exclude=.DS_Store
+    '--exclude=._*'
+    '--exclude=*.download'
+    '--exclude=*.crdownload'
+    '--exclude=*.part'
+    '--exclude=*.tmp'
+  )
+  if [[ "$allow_delete" == true ]]; then
+    rsync_args+=(--delete --delete-excluded)
+  fi
+  rsync "${rsync_args[@]}" "$source_dir/" "$destination/" 2>&1 | while IFS= read -r line; do
+    bpw_log INFO "rsync: $line"
+  done
+  return "${pipestatus[1]}"
 }
 
 bpw_mount_table_contains() {

@@ -13,7 +13,7 @@ warn() { print -r -- "[WARN] $*"; warnings=$((warnings + 1)); }
 
 if [[ "$(uname -s)" == Darwin ]]; then ok "运行环境为 macOS"; else fail "仅支持 macOS"; fi
 
-for command_name in zsh osascript osacompile rsync launchctl plutil find shasum; do
+for command_name in zsh osascript osacompile rsync launchctl plutil find shasum ps stat; do
   if command -v "$command_name" >/dev/null 2>&1; then
     ok "已找到 $command_name：$(command -v "$command_name")"
   else
@@ -34,6 +34,22 @@ if [[ "$config_valid" == true ]]; then
 fi
 
 if bpw_prepare_runtime_dirs && [[ -w "$BPW_LOG_DIR" ]]; then ok "日志目录可写：$BPW_LOG_DIR"; else fail "日志目录不可写：$BPW_LOG_DIR"; fi
+
+for lock_name in scan sync; do
+  lock_dir="$BPW_STATE_DIR/$lock_name.lock"
+  if [[ -d "$lock_dir" ]]; then
+    if bpw_lock_is_active "$lock_dir"; then
+      warn "$lock_name 任务当前持有运行锁"
+    else
+      warn "发现失效的 $lock_name 锁；下次运行会自动回收"
+    fi
+  fi
+done
+
+if [[ -f "$BPW_MAIN_LOG" ]]; then
+  log_size="$(bpw_file_size "$BPW_MAIN_LOG")" || log_size=0
+  (( log_size < BPW_LOG_MAX_BYTES )) || warn "主日志将在下次写入时轮转"
+fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/bpw-doctor.XXXXXX")" || exit 1
 trap 'rm -rf "$tmp_dir"' EXIT INT TERM HUP
@@ -70,6 +86,7 @@ if [[ "$config_valid" == true ]]; then
   if [[ "$ENABLE_BACKUP" == true ]]; then
     [[ "$BACKUP_DESTINATION" == "/Volumes/$BACKUP_VOLUME_NAME"(|/*) ]] && ok "外接硬盘目标配置合理" || fail "外接硬盘目标不在配置卷中"
     if bpw_volume_is_mounted; then ok "外接硬盘已真实挂载"; else warn "外接硬盘当前未挂载：/Volumes/$BACKUP_VOLUME_NAME"; fi
+    [[ -f "$BPW_STATE_DIR/last-sync-success.status" ]] || warn "备份已启用，但尚无成功同步记录"
   else
     ok "外接硬盘备份未启用"
   fi

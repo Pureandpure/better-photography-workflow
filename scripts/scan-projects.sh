@@ -8,12 +8,27 @@ source "$BPW_ROOT/lib/common.sh" || exit 1
 bpw_load_config || exit 1
 bpw_prepare_runtime_dirs || { bpw_error "无法准备状态或日志目录"; exit 1; }
 
+operation_started="$(date +%s)"
+operation_outcome="failed"
+operation_detail="unexpected_exit"
+lock_acquired=false
 lock_dir="$BPW_STATE_DIR/scan.lock"
-if ! mkdir "$lock_dir" 2>/dev/null; then
+finish_scan() {
+  local exit_code=$? now duration
+  now="$(date +%s)"
+  duration=$((now - operation_started))
+  [[ "$lock_acquired" == true ]] && bpw_release_lock "$lock_dir" || true
+  bpw_write_operation_status scan "$operation_outcome" "$exit_code" "$operation_detail" "$duration" || true
+}
+trap finish_scan EXIT
+
+if ! bpw_acquire_lock "$lock_dir" scan; then
+  operation_outcome="skipped"
+  operation_detail="active_lock"
   bpw_log INFO "另一个扫描任务正在运行，本次跳过"
   exit 0
 fi
-trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM HUP
+lock_acquired=true
 
 process_project() {
   local project_path="$1" epoch result
@@ -62,5 +77,11 @@ else
   exit 2
 fi
 
-(( failures == 0 )) || { bpw_error "$failures 个项目处理失败"; exit 1; }
+if (( failures != 0 )); then
+  operation_detail="project_failures=$failures"
+  bpw_error "$failures 个项目处理失败"
+  exit 1
+fi
+operation_outcome="success"
+operation_detail="scan_completed"
 bpw_log INFO "扫描完成"

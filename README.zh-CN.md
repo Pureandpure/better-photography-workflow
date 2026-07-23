@@ -37,10 +37,16 @@ bpw sync                 执行安全增量备份
 bpw status               查看配置、项目、硬盘和服务状态
 bpw doctor               检查系统环境、配置、权限和服务
 bpw logs                 查看最近 100 行主日志
+bpw version              显示当前版本
+bpw config export        输出供图形界面使用的 JSON 配置
+bpw config apply <文件>  校验并应用 plist 或 JSON 配置
+bpw app                  打开图形界面
 bpw help                 显示帮助
 ```
 
 详细资料：[安装](docs/installation.md)、[配置](docs/configuration.md)、[权限](docs/permissions.md)、[工作流](docs/workflow.md)、[故障排查](docs/troubleshooting.md)。
+
+原生 macOS 菜单栏与设置应用的构建和使用方法见：[图形界面](docs/gui.md)。
 
 ## 安全与幂等
 
@@ -50,6 +56,9 @@ bpw help                 显示帮助
 - 仅在四条提醒事项全部成功创建或确认已存在后写入本地状态；中断后重试不会重复创建。
 - 备份同时检查 `diskutil` 与系统挂载表，不会只因 `/Volumes/卷名` 目录存在就判断硬盘在线。
 - 默认不向 `rsync` 传递 `--delete`，因此不会删除目标硬盘已有文件。
+- 扫描和同步锁记录 PID 与进程启动身份；崩溃或重启留下的失效锁会自动回收。
+- 备份目标逐级拒绝符号链接，并确认真实路径和文件系统仍属于已挂载外接卷。
+- 主日志达到 1 MiB 后自动轮转，保留最近三份；`bpw status` 显示最近扫描和同步结果。
 
 ## 配置文件信任说明（重要）
 

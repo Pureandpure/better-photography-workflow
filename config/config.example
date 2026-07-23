@@ -2,7 +2,7 @@
 WORK_DIR="$HOME/Pictures/Photography_Work"
 
 # 提醒事项列表名称
-REMINDER_LIST_NAME="摄影工作流"
+REMINDER_LIST_NAME="🍎摄影工作流"
 
 # 是否自动创建项目内部目录
 AUTO_CREATE_PROJECT_STRUCTURE=true

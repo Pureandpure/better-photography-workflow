@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-tests:
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check zsh syntax
+        shell: zsh {0}
+        run: |
+          for script in bin/bpw lib/common.sh scripts/*.sh install.sh uninstall.sh tests/run-tests.sh app/build-app.sh; do
+            zsh -n "$script"
+          done
+      - name: Run test suite
+        run: ./tests/run-tests.sh
+      - name: Run SwiftUI model tests
+        run: swift test --package-path app

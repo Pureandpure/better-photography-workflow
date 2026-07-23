@@ -1,5 +1,7 @@
 # Installation
 
+For the optional native settings application, complete the CLI installation first, then follow [gui.md](gui.md).
+
 ## Requirements
 
 - macOS on Apple Silicon or Intel

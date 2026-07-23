@@ -29,19 +29,26 @@ bpw sync
 bpw status
 bpw doctor
 bpw logs
+bpw version
+bpw config export
+bpw config apply <file>
 bpw help
 ```
 
 See [installation](docs/installation.md), [configuration](docs/configuration.md), [permissions](docs/permissions.md), [workflow](docs/workflow.md), and [troubleshooting](docs/troubleshooting.md).
 
+For the native macOS menu-bar and settings app, see the [GUI guide](docs/gui.md).
+
 ## Safety model
 
 - Scanning is limited to first-level, non-hidden directories under `WORK_DIR`.
 - Idempotency has two layers: a local marker keyed by the SHA-256 of the absolute project path, plus an AppleScript lookup for a matching reminder title, project path, and source marker.
-- A scan lock prevents concurrent scanner instances. State is written only after AppleScript succeeds; a retry after a crash is safe because Reminders performs the second duplicate check.
+- Scan and sync locks record both PID and process identity. A stale lock left by a crash or reboot is reclaimed automatically.
 - Backup verifies the volume through both `diskutil` and the system mount table. The existence of `/Volumes/<name>` alone is never considered a mounted disk.
 - `rsync` does not receive `--delete` unless `BACKUP_ALLOW_DELETE=true`. The default can only add or update destination files.
+- Every backup destination component is checked for symlinks, real-path containment, and membership in the mounted volume's filesystem.
 - `.DS_Store`, AppleDouble files (`._*`), and common temporary download files are excluded.
+- The 1 MiB main log rotates with three backups, while `bpw status` reports the latest scan, sync, and successful-sync timestamps.
 
 ## Important configuration trust notice
 
