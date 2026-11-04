@@ -8,7 +8,7 @@ For the optional native settings application, complete the CLI installation firs
 - Apple Reminders
 - The macOS-provided zsh, osascript, launchd, rsync, plutil, find, and shasum
 
-No Homebrew, Node.js, Python, or other package manager is required.
+源码安装现在需要 Xcode Command Line Tools 的 Swift 编译器，以构建原生导入后端。安装后的 CLI 无需重新编译。No Homebrew, Node.js, Python, or other package manager is required.
 
 ## Install
 

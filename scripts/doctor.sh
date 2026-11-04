@@ -35,7 +35,11 @@ fi
 
 if bpw_prepare_runtime_dirs && [[ -w "$BPW_LOG_DIR" ]]; then ok "日志目录可写：$BPW_LOG_DIR"; else fail "日志目录不可写：$BPW_LOG_DIR"; fi
 
-for lock_name in scan sync; do
+if [[ "$config_valid" == true ]]; then
+  if "$BPW_ROOT/scripts/workflow-engine.sh" workspace list; then ok "Workspace UUID/online 检查完成"; else fail "Workspace 配置或后端无效"; fi
+fi
+
+for lock_name in scan sync ingest; do
   lock_dir="$BPW_STATE_DIR/$lock_name.lock"
   if [[ -d "$lock_dir" ]]; then
     if bpw_lock_is_active "$lock_dir"; then

@@ -7,8 +7,8 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("工作流概览").font(.largeTitle.bold())
-                    Text("查看后台状态，创建新项目或立即运行任务。")
+                    Text("收件台").font(.largeTitle.bold())
+                    Text("创建真实项目、查看素材库状态，并处理刚摄取的内容。")
                         .foregroundStyle(.secondary)
                 }
 
@@ -17,15 +17,17 @@ struct DashboardView: View {
                                symbol: "folder.badge.gearshape", healthy: model.status.scanHealthy)
                     StatusCard(title: "备份", value: model.status.backupEnabled ? "已启用" : "未启用",
                                symbol: "externaldrive", healthy: true)
-                    StatusCard(title: "已发现项目", value: model.status["已发现项目"],
-                               symbol: "photo.on.rectangle.angled", healthy: true)
+                    StatusCard(title: "进行中项目", value: "\(model.activeProjects.count)",
+                               symbol: "film.stack", healthy: true)
                     StatusCard(title: "外接硬盘", value: model.status["外接硬盘已连接"],
                                symbol: "externaldrive.connected.to.line.below", healthy: true)
                 }
 
-                GroupBox("新建摄影项目") {
+                IngestView(model: model)
+
+                GroupBox("新建视频项目") {
                     HStack(spacing: 12) {
-                        TextField("例如：杭州街拍", text: $model.projectName)
+                        TextField("例如：杭州 Vlog", text: $model.projectName)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { Task { await model.createProject() } }
                         Button("创建项目") { Task { await model.createProject() } }
@@ -45,10 +47,20 @@ struct DashboardView: View {
                         }
                         .disabled(!model.configuration.enableBackup)
                         Button(action: model.openWorkDirectory) {
-                            Label("打开工作目录", systemImage: "folder")
+                            Label("打开主素材库", systemImage: "folder")
                         }
                     }
                     .buttonStyle(.bordered)
+                    .padding(.vertical, 6)
+                }
+
+                GroupBox("当前主素材库") {
+                    LabeledContent("位置") {
+                        Text(model.configuration.workDir)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
                     .padding(.vertical, 6)
                 }
 
@@ -61,7 +73,7 @@ struct DashboardView: View {
             }
             .padding(28)
         }
-        .navigationTitle("概览")
+        .navigationTitle("收件台")
     }
 }
 

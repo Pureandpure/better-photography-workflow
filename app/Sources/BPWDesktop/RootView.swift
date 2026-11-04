@@ -1,55 +1,85 @@
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case dashboard = "概览"
-    case general = "项目设置"
-    case reminders = "提醒事项"
-    case backup = "备份"
-    case diagnostics = "诊断与日志"
+    case inbox = "收件台"
+    case activeProjects = "进行中"
+    case completed = "已完成"
+    case workflows = "工作流"
+    case devices = "设备"
+    case transfers = "传输记录"
+    case settings = "设置"
 
     var id: String { rawValue }
     var symbol: String {
         switch self {
-        case .dashboard: "square.grid.2x2"
-        case .general: "folder"
-        case .reminders: "checklist"
-        case .backup: "externaldrive"
-        case .diagnostics: "stethoscope"
+        case .inbox: "tray"
+        case .activeProjects: "clock"
+        case .completed: "checkmark.circle"
+        case .workflows: "point.3.connected.trianglepath.dotted"
+        case .devices: "externaldrive.connected.to.line.below"
+        case .transfers: "arrow.left.arrow.right.circle"
+        case .settings: "gearshape"
         }
     }
+
 }
 
 struct RootView: View {
     @ObservedObject var model: AppModel
-    @State private var selection: AppSection? = .dashboard
+    @State private var selection: AppSection? = .activeProjects
 
     var body: some View {
         NavigationSplitView {
             List(AppSection.allCases, selection: $selection) { section in
-                Label(section.rawValue, systemImage: section.symbol)
-                    .tag(section)
+                HStack(spacing: 10) {
+                    Label(section.rawValue, systemImage: section.symbol)
+                    Spacer()
+                    if let badge = badge(for: section), badge > 0 {
+                        Text("\(badge)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(.quaternary, in: Capsule())
+                    }
+                }
+                .tag(section)
             }
-            .navigationTitle("摄影工作流")
-            .navigationSplitViewColumnWidth(min: 180, ideal: 210)
+            .navigationTitle("创作者工作流")
+            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 250)
         } detail: {
             Group {
-                switch selection ?? .dashboard {
-                case .dashboard: DashboardView(model: model)
-                case .general: GeneralSettingsView(configuration: $model.configuration)
-                case .reminders: ReminderSettingsView(configuration: $model.configuration)
-                case .backup: BackupSettingsView(configuration: $model.configuration)
-                case .diagnostics: DiagnosticsView(model: model)
+                switch selection ?? .activeProjects {
+                case .inbox: DashboardView(model: model)
+                case .activeProjects: ActiveProjectsView(model: model)
+                case .completed: CompletedProjectsView(model: model)
+                case .workflows: ReminderSettingsView(configuration: $model.configuration)
+                case .devices: DevicesView(model: model)
+                case .transfers: DiagnosticsView(model: model)
+                case .settings: SettingsHubView(configuration: $model.configuration)
                 }
             }
             .safeAreaInset(edge: .top) { messageBanner }
             .toolbar {
                 ToolbarItemGroup {
                     if model.isWorking { ProgressView().controlSize(.small) }
-                    Button("保存并应用") { Task { await model.save() } }
-                        .keyboardShortcut("s", modifiers: .command)
-                        .disabled(model.isWorking || !model.hasUnsavedChanges)
+                    if selection == .settings {
+                        Button("保存并应用") { Task { await model.save() } }
+                            .keyboardShortcut("s", modifiers: .command)
+                            .disabled(model.isWorking || !model.hasUnsavedChanges)
+                    }
                 }
             }
+        }
+        .preferredColorScheme(.light)
+    }
+
+    private func badge(for section: AppSection) -> Int? {
+        switch section {
+        case .inbox: model.inboxCount
+        case .activeProjects: model.activeProjects.count
+        case .completed: model.completedProjects.count
+        default: nil
         }
     }
 
@@ -64,6 +94,17 @@ struct RootView: View {
                 model.notice = nil
             }
         }
+    }
+}
+
+private struct SectionPlaceholderView: View {
+    let title: String
+    let message: String
+    let symbol: String
+
+    var body: some View {
+        ContentUnavailableView(title, systemImage: symbol, description: Text(message))
+            .navigationTitle(title)
     }
 }
 

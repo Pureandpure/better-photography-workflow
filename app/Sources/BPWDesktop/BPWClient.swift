@@ -14,15 +14,29 @@ actor BPWClient {
         return installed
     }
 
-    func run(_ arguments: [String]) throws -> BPWCommandResult {
+    func run(_ arguments: [String], onOutput: (@Sendable (String) -> Void)? = nil) throws -> BPWCommandResult {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = try cliURL()
         process.arguments = arguments
+        process.standardInput = FileHandle.nullDevice
         process.standardOutput = pipe
         process.standardError = pipe
         try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        var data = Data()
+        var pending = Data()
+        while true {
+            let chunk = pipe.fileHandleForReading.availableData
+            if chunk.isEmpty { break }
+            data.append(chunk)
+            pending.append(chunk)
+            while let newline = pending.firstIndex(of: 10) {
+                let line = pending[..<newline]
+                if let onOutput, !line.isEmpty { onOutput(String(decoding: line, as: UTF8.self)) }
+                pending.removeSubrange(...newline)
+            }
+        }
+        if let onOutput, !pending.isEmpty { onOutput(String(decoding: pending, as: UTF8.self)) }
         process.waitUntilExit()
         let output = String(data: data, encoding: .utf8) ?? ""
         return BPWCommandResult(output: output.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -39,6 +53,20 @@ actor BPWClient {
             return try JSONDecoder().decode(BPWConfiguration.self, from: data)
         } catch {
             throw BPWError.invalidOutput("配置解析失败：\(error.localizedDescription)")
+        }
+    }
+
+    func loadProjects() throws -> [CreatorProject] {
+        let result = try run(["projects", "list"])
+        guard result.succeeded else { throw BPWError.commandFailed(result.output) }
+        guard let data = result.output.data(using: .utf8) else {
+            throw BPWError.invalidOutput("无法读取项目列表。")
+        }
+        do {
+            return try JSONDecoder().decode([CreatorProjectRecord].self, from: data)
+                .map(CreatorProject.init(record:))
+        } catch {
+            throw BPWError.invalidOutput("项目列表解析失败：\(error.localizedDescription)")
         }
     }
 

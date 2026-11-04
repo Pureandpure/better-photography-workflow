@@ -7,7 +7,7 @@ struct MenuBarContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("摄影工作流").font(.headline)
+            Text("创作者工作流").font(.headline)
             Text("扫描：\(model.status["扫描服务"]) · 备份：\(model.status["备份已启用"])")
                 .font(.caption).foregroundStyle(.secondary)
             Divider()

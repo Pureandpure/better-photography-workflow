@@ -24,10 +24,23 @@ better-photography-workflow (bpw)
   install             安装或更新程序与 launchd 服务
   uninstall [--purge] 卸载程序；--purge 同时删除配置、状态和日志
   init                创建默认配置与摄影工作目录（不覆盖配置）
-  new "项目名称"      创建带本地日期的项目并立即生成提醒事项
+  new "项目名称" [--workspace id]  按 Workspace 策略创建项目与提醒
+  workspace list / add <id> <路径> --type local|external [--name 名称]
+  workspace preference auto|local|ask
+  project list / show <id>
+  media list          检测媒体卡（JSON）
+  imports [--project id] 最近成功导入（JSON）
+  ingest [来源路径] [--project id|--new 名称] [--workspace id]
+         [--device A7R5|Pocket3|Action6|Air3S|Unknown] [--dates yyyy-MM-dd[,yyyy-MM-dd]] [--dry-run] [--checksum]
+  cancel-ingest       请求当前导入安全停止
   scan                扫描一级项目目录并处理新项目
-  sync                安全地增量备份到已挂载的外接硬盘
+  sync [--project id]  备份 online Primary 项目到已挂载硬盘
   status              显示配置、项目、备份与后台任务状态
+  projects list       以 JSON 列出真实项目与持久化工作流状态
+  projects set-stage <项目路径> <阶段>
+                      更新项目阶段：ingest/verify/organize/edit/export/archive/done
+  projects set-favorite <项目路径> <true|false>
+                      更新项目收藏状态
   doctor              检查运行环境、权限、配置和服务
   logs                显示主日志最近 100 行
   app                 打开图形界面
@@ -50,6 +63,7 @@ command_init() {
     print -r -- "已创建配置文件：$BPW_CONFIG_FILE"
   fi
   bpw_load_config || exit 1
+  bpw_work_dir_mount_safe || exit 1
   mkdir -p "$WORK_DIR" || { bpw_error "无法创建工作目录：$WORK_DIR"; exit 1; }
   bpw_prepare_runtime_dirs || exit 1
   print -r -- "已准备摄影工作目录：$WORK_DIR"
@@ -57,41 +71,25 @@ command_init() {
 }
 
 command_new() {
-  (( $# == 1 )) || { bpw_error '用法：bpw new "项目名称"'; exit 2; }
-  local supplied_name="$1" directory_name project_path subdir
-  [[ -n "$supplied_name" && "$supplied_name" != */* && "$supplied_name" != *$'\n'* ]] || {
-    bpw_error "项目名称不能为空、包含斜杠或换行"
-    exit 2
-  }
-  bpw_load_config || exit 1
-  mkdir -p "$WORK_DIR" || exit 1
-  if [[ "$supplied_name" =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}_' ]]; then
-    directory_name="$supplied_name"
-  else
-    directory_name="$(date '+%Y-%m-%d')_$supplied_name"
-  fi
-  project_path="$WORK_DIR/$directory_name"
-  [[ ! -e "$project_path" ]] || { bpw_error "项目目录已存在，不会覆盖：$project_path"; exit 1; }
-  mkdir "$project_path" || exit 1
-  if [[ "$AUTO_CREATE_PROJECT_STRUCTURE" == true ]]; then
-    for subdir in "${PROJECT_SUBDIRECTORIES[@]}"; do
-      mkdir -p "$project_path/$subdir" || exit 1
-    done
-  fi
+  local project_path
+  project_path="$("$BPW_ROOT/scripts/workflow-engine.sh" new "$@")" || return $?
   print -r -- "已创建项目：$project_path"
   "$BPW_ROOT/scripts/scan-projects.sh" --project "$project_path"
+
 }
 
 command_status() {
   bpw_load_config || exit 1
   bpw_prepare_runtime_dirs || exit 1
   local discovered=0 processed=0 pending=0 project_path mounted="否" watch="未加载" sync="未加载"
-  if [[ -d "$WORK_DIR" ]]; then
-    while IFS= read -r -d '' project_path; do
-      discovered=$((discovered + 1))
-      if bpw_project_is_processed "$project_path"; then processed=$((processed + 1)); fi
-    done < <(find "$WORK_DIR" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
-  fi
+  local paths_file
+  paths_file="$(mktemp "${TMPDIR:-/tmp}/bpw-status-paths.XXXXXX")" || return 1
+  "$BPW_ROOT/scripts/workflow-engine.sh" paths > "$paths_file" || { rm -f "$paths_file"; return 1; }
+  while IFS= read -r -d '' project_path; do
+    discovered=$((discovered + 1))
+    if bpw_project_is_processed "$project_path"; then processed=$((processed + 1)); fi
+  done < "$paths_file"
+  rm -f "$paths_file"
   pending=$((discovered - processed))
   bpw_volume_is_mounted && mounted="是"
   bpw_launchd_loaded "$BPW_WATCH_LABEL" && watch="已加载"
@@ -107,6 +105,8 @@ command_status() {
   print -r -- "外接硬盘已连接：$mounted"
   print -r -- "扫描服务：$watch"
   print -r -- "备份服务：$sync"
+  print -r -- "最近导入：$(bpw_operation_status_summary ingest)"
+  "$BPW_ROOT/scripts/workflow-engine.sh" workspace list || return 1
   print -r -- "最近扫描：$(bpw_operation_status_summary scan)"
   print -r -- "最近同步：$(bpw_operation_status_summary sync)"
   print -r -- "最近成功同步：$(bpw_last_success_timestamp sync)"
@@ -164,8 +164,10 @@ case "$command_name" in
   init) command_init "$@" ;;
   new) command_new "$@" ;;
   scan) (( $# == 0 )) || { bpw_error "bpw scan 不接受参数"; exit 2; }; "$BPW_ROOT/scripts/scan-projects.sh" ;;
-  sync) (( $# == 0 )) || { bpw_error "bpw sync 不接受参数"; exit 2; }; "$BPW_ROOT/scripts/sync-projects.sh" ;;
+  sync) "$BPW_ROOT/scripts/sync-projects.sh" "$@" ;;
   status) (( $# == 0 )) || { bpw_error "bpw status 不接受参数"; exit 2; }; command_status ;;
+  projects|project) "$BPW_ROOT/scripts/workflow-engine.sh" "$command_name" "$@" ;;
+  workspace|media|ingest|imports|cancel-ingest) "$BPW_ROOT/scripts/workflow-engine.sh" "$command_name" "$@" ;;
   doctor) (( $# == 0 )) || { bpw_error "bpw doctor 不接受参数"; exit 2; }; BPW_CLI_PATH="${0:A}" "$BPW_ROOT/scripts/doctor.sh" ;;
   logs) (( $# == 0 )) || { bpw_error "bpw logs 不接受参数"; exit 2; }; command_logs ;;
   app) command_app "$@" ;;

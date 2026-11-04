@@ -5,7 +5,7 @@
 # bpw_load_config applies basic ownership and permission checks before sourcing.
 
 BPW_APP_NAME="better-photography-workflow"
-BPW_VERSION="0.3.1"
+BPW_VERSION="0.4.0"
 BPW_WATCH_LABEL="com.better-photography-workflow.watch"
 BPW_SYNC_LABEL="com.better-photography-workflow.sync"
 BPW_LOG_MAX_BYTES=1048576
@@ -28,7 +28,7 @@ bpw_set_defaults() {
   WORK_DIR="$HOME/Pictures/Photography_Work"
   REMINDER_LIST_NAME="🍎摄影工作流"
   AUTO_CREATE_PROJECT_STRUCTURE=true
-  PROJECT_SUBDIRECTORIES=("01_RAW" "02_EXPORT" "03_PRINT" "99_REFERENCE")
+  PROJECT_SUBDIRECTORIES=("01_MEDIA" "02_PHOTO" "03_VIDEO" "04_CACHE_DELETE" "05_EXPORTS" "99_DOC")
   REMINDER_HOUR=20
   REMINDER_MINUTE=0
   TASK_1_NAME="① 初筛废片"
@@ -57,7 +57,7 @@ bpw_timestamp() {
 
 bpw_prepare_runtime_dirs() {
   umask 077
-  mkdir -p "$BPW_STATE_DIR" "$BPW_STATE_DIR/projects" "$BPW_LOG_DIR" || return 1
+  mkdir -p "$BPW_STATE_DIR" "$BPW_STATE_DIR/projects" "$BPW_STATE_DIR/workflow-projects" "$BPW_LOG_DIR" || return 1
   touch "$BPW_MAIN_LOG" || return 1
 }
 
@@ -354,7 +354,13 @@ bpw_apply_plist_config() {
 }
 
 bpw_state_id() {
-  local project_path="$1" digest
+  local project_path="$1" digest identity
+  if [[ -f "$project_path/.bpw-project.json" && ! -L "$project_path/.bpw-project.json" ]]; then
+    identity="$(plutil -extract id raw -o - "$project_path/.bpw-project.json" 2>/dev/null)" || return 1
+    [[ "$identity" =~ '^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$' ]] || return 1
+    print -r -- "$identity"
+    return 0
+  fi
   if [[ -e "$project_path" ]]; then
     project_path="${project_path:A}"
   fi
@@ -507,8 +513,18 @@ bpw_ensure_project_structure() {
   local project_path="$1" subdir
   [[ "$AUTO_CREATE_PROJECT_STRUCTURE" == true ]] || return 0
   for subdir in "${PROJECT_SUBDIRECTORIES[@]}"; do
-    mkdir -p "$project_path/$subdir" || return 1
+    bpw_prepare_destination_within_volume "$project_path" "$project_path/$subdir" || return 1
   done
+}
+
+bpw_work_dir_mount_safe() {
+  [[ "$WORK_DIR" == /Volumes/* ]] || return 0
+  local relative="${WORK_DIR#/Volumes/}" volume_root
+  volume_root="/Volumes/${relative%%/*}"
+  diskutil info "$volume_root" >/dev/null 2>&1 && bpw_mount_table_contains "$volume_root" < <(/sbin/mount) || {
+    bpw_error "WORK_DIR 外置卷未真实挂载，不创建影子目录：$volume_root"
+    return 1
+  }
 }
 
 bpw_volume_is_mounted() {
@@ -577,6 +593,7 @@ bpw_run_rsync() {
     --human-readable
     --itemize-changes
     --partial
+    --exclude=.bpw/partials/
     --exclude=.DS_Store
     '--exclude=._*'
     '--exclude=*.download'

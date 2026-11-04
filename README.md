@@ -1,8 +1,8 @@
-# better-photography-workflow
+# Creator Workflow for macOS
 
-A dependency-free, macOS-only command-line workflow assistant for photographers. It watches a project directory, creates a four-step project checklist in Apple Reminders, optionally creates a standard folder structure, and can incrementally copy projects to a genuinely mounted external volume with `rsync`.
+A native macOS workflow for video creators. The SwiftUI app reads real project directories from a configurable primary media library, tracks production stages and Done state, infers source devices from the folder hierarchy, and keeps optional second-copy backup automation in the existing `bpw` backend.
 
-The project uses only tools shipped with macOS: zsh, AppleScript/Reminders, launchd, rsync, and standard command-line utilities. It works on Apple Silicon and Intel Macs. It never modifies the internal contents of an Apple Photos Library.
+The project uses only tools shipped with macOS: SwiftUI, zsh, AppleScript/Reminders, launchd, rsync, and standard command-line utilities. It works on Apple Silicon and Intel Macs. It never modifies the internal contents of an Apple Photos Library.
 
 中文说明：[README.zh-CN.md](README.zh-CN.md)
 
@@ -17,6 +17,10 @@ bpw new "Cat Portrait"
 
 The default workspace is `~/Pictures/Photography_Work`. A new project receives the local date and standard subdirectories, then four due-dated reminders are added to the configured Reminders list.
 
+## Photography ingest MVP
+
+See [setup, travel steps, safety and validation limits](docs/ingest.md). Stable Project IDs, UUID-based external workspaces, camera ingest, resumable copy, manifests, conservative Session matching and Primary-project backups are available through the CLI, with basic GUI import controls. Source media is retained.
+
 ## Commands
 
 ```text
@@ -27,6 +31,9 @@ bpw new "project name"
 bpw scan
 bpw sync
 bpw status
+bpw projects list
+bpw projects set-stage <project-path> <stage>
+bpw projects set-favorite <project-path> <true|false>
 bpw doctor
 bpw logs
 bpw version
@@ -41,8 +48,8 @@ For the native macOS menu-bar and settings app, see the [GUI guide](docs/gui.md)
 
 ## Safety model
 
-- Scanning is limited to first-level, non-hidden directories under `WORK_DIR`.
-- Idempotency has two layers: a local marker keyed by the SHA-256 of the absolute project path, plus an AppleScript lookup for a matching reminder title, project path, and source marker.
+- Scanning covers online Primary workspaces; see [ingest and migration](docs/ingest.md).
+- Stable project UUIDs migrate existing path-hash reminder and workflow state without deleting old markers; reminders retain legacy-path compatibility.
 - Scan and sync locks record both PID and process identity. A stale lock left by a crash or reboot is reclaimed automatically.
 - Backup verifies the volume through both `diskutil` and the system mount table. The existence of `/Volumes/<name>` alone is never considered a mounted disk.
 - `rsync` does not receive `--delete` unless `BACKUP_ALLOW_DELETE=true`. The default can only add or update destination files.

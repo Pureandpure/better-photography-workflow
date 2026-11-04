@@ -9,10 +9,12 @@ AUTO_CREATE_PROJECT_STRUCTURE=true
 
 # 新项目默认子目录
 PROJECT_SUBDIRECTORIES=(
-  "01_RAW"
-  "02_EXPORT"
-  "03_PRINT"
-  "99_REFERENCE"
+  "01_MEDIA"
+  "02_PHOTO"
+  "03_VIDEO"
+  "04_CACHE_DELETE"
+  "05_EXPORTS"
+  "99_DOC"
 )
 
 # 提醒时间，24 小时制
@@ -52,3 +54,6 @@ SCAN_INTERVAL=300
 
 # 启用备份后，后台同步间隔，单位为秒
 SYNC_INTERVAL=3600
+
+# 多 Workspace 使用 bpw workspace add/list/preference；详见 docs/ingest.md。
+# 新 sync 按 Project UUID 分目录，只执行非删除备份。

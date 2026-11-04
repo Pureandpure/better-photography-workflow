@@ -36,9 +36,19 @@ trap cleanup_install EXIT
 mkdir -p "$stage_root/bin" "$stage_root/lib" "$stage_root/scripts" "$stage_root/launchd" \
   "$stage_root/config" "$stage_root/docs" || exit 1
 cp -f "$SOURCE_ROOT/bin/bpw" "$stage_root/bin/bpw" || exit 1
+if [[ -d "$SOURCE_ROOT/engine" ]]; then
+  swift build -c release --scratch-path "${TMPDIR:-/tmp}/bpw-native-build-$(id -u)" --package-path "$SOURCE_ROOT/engine" || exit 1
+  engine_bin="$(swift build -c release --scratch-path "${TMPDIR:-/tmp}/bpw-native-build-$(id -u)" --package-path "$SOURCE_ROOT/engine" --show-bin-path)" || exit 1
+  cp "$engine_bin/bpw-engine" "$stage_root/bin/bpw-engine" || exit 1
+elif [[ -x "$SOURCE_ROOT/bin/bpw-engine" ]]; then
+  cp "$SOURCE_ROOT/bin/bpw-engine" "$stage_root/bin/bpw-engine" || exit 1
+else
+  print -u2 -- "缺少原生导入后端"
+  exit 1
+fi
 cp -f "$SOURCE_ROOT/lib/common.sh" "$stage_root/lib/common.sh" || exit 1
 cp -f "$SOURCE_ROOT/scripts/scan-projects.sh" "$SOURCE_ROOT/scripts/sync-projects.sh" \
-  "$SOURCE_ROOT/scripts/create-reminders.applescript" "$SOURCE_ROOT/scripts/doctor.sh" \
+  "$SOURCE_ROOT/scripts/workflow-engine.sh" "$SOURCE_ROOT/scripts/project-state.sh" "$SOURCE_ROOT/scripts/create-reminders.applescript" "$SOURCE_ROOT/scripts/doctor.sh" \
   "$stage_root/scripts/" || exit 1
 cp -f "$SOURCE_ROOT/launchd/$BPW_WATCH_LABEL.plist.template" \
   "$SOURCE_ROOT/launchd/$BPW_SYNC_LABEL.plist.template" "$stage_root/launchd/" || exit 1
@@ -48,11 +58,11 @@ cp -f "$SOURCE_ROOT/README.md" "$SOURCE_ROOT/README.zh-CN.md" "$SOURCE_ROOT/LICE
   "$stage_root/" || exit 1
 for doc in "$SOURCE_ROOT"/docs/*.md; do cp -f "$doc" "$stage_root/docs/" || exit 1; done
 
-chmod 755 "$stage_root/bin/bpw" "$stage_root/scripts/scan-projects.sh" \
-  "$stage_root/scripts/sync-projects.sh" "$stage_root/scripts/doctor.sh" \
+chmod 755 "$stage_root/bin/bpw" "$stage_root/bin/bpw-engine" "$stage_root/scripts/workflow-engine.sh" "$stage_root/scripts/scan-projects.sh" \
+  "$stage_root/scripts/sync-projects.sh" "$stage_root/scripts/project-state.sh" "$stage_root/scripts/doctor.sh" \
   "$stage_root/install.sh" "$stage_root/uninstall.sh" || exit 1
-for script in "$stage_root/bin/bpw" "$stage_root/lib/common.sh" "$stage_root/scripts/scan-projects.sh" \
-  "$stage_root/scripts/sync-projects.sh" "$stage_root/scripts/doctor.sh" \
+for script in "$stage_root/scripts/workflow-engine.sh" "$stage_root/bin/bpw" "$stage_root/lib/common.sh" "$stage_root/scripts/scan-projects.sh" \
+  "$stage_root/scripts/sync-projects.sh" "$stage_root/scripts/project-state.sh" "$stage_root/scripts/doctor.sh" \
   "$stage_root/install.sh" "$stage_root/uninstall.sh"; do
   zsh -n "$script" || { print -u2 -- "脚本语法检查失败：$script"; exit 1; }
 done

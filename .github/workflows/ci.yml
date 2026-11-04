@@ -22,5 +22,7 @@ jobs:
           done
       - name: Run test suite
         run: ./tests/run-tests.sh
+      - name: Run native ingest safety tests
+        run: swift test --package-path engine
       - name: Run SwiftUI model tests
         run: swift test --package-path app

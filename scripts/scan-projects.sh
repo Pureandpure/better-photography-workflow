@@ -32,7 +32,7 @@ lock_acquired=true
 
 process_project() {
   local project_path="$1" epoch result
-  [[ -d "$project_path" ]] || { bpw_error "项目目录不存在：$project_path"; return 1; }
+  [[ ! -L "$project_path" && -d "$project_path" ]] || { bpw_error "项目目录不存在：$project_path"; return 1; }
   project_path="${project_path:A}"
   bpw_ensure_project_structure "$project_path" || { bpw_error "无法补齐项目目录结构：$project_path"; return 1; }
 
@@ -48,7 +48,9 @@ process_project() {
     "$TASK_1_NAME" "$TASK_1_DAYS" "$TASK_1_DESCRIPTION" \
     "$TASK_2_NAME" "$TASK_2_DAYS" "$TASK_2_DESCRIPTION" \
     "$TASK_3_NAME" "$TASK_3_DAYS" "$TASK_3_DESCRIPTION" \
-    "$TASK_4_NAME" "$TASK_4_DAYS" "$TASK_4_DESCRIPTION" 2>&1)"
+    "$TASK_4_NAME" "$TASK_4_DAYS" "$TASK_4_DESCRIPTION" \
+    "$(bpw_state_id "$project_path")" \
+    "$(plutil -extract reminderOriginalPath raw -o - "$project_path/.bpw-project.json" 2>/dev/null || print -r -- "$project_path")" 2>&1)"
   local command_status=$?
   if (( command_status != 0 )); then
     bpw_error "提醒事项创建失败（osascript 退出码 $command_status）：$result"
@@ -60,22 +62,20 @@ process_project() {
 }
 
 failures=0
-if (( $# == 2 )) && [[ "$1" == "--project" ]]; then
-  project_path="${2:A}"
-  [[ "${project_path:h}" == "${WORK_DIR:A}" ]] || {
-    bpw_error "指定目录不是 WORK_DIR 下的一级项目：$project_path"
-    exit 2
-  }
-  process_project "$project_path" || failures=$((failures + 1))
+paths_file="$(mktemp "${TMPDIR:-/tmp}/bpw-scan-paths.XXXXXX")" || exit 1
+if (( $# == 2 )) && [[ "$1" == --project ]]; then
+  "$BPW_ROOT/scripts/workflow-engine.sh" paths --project "$2" > "$paths_file" || { rm -f "$paths_file"; exit 1; }
 elif (( $# == 0 )); then
-  [[ -d "$WORK_DIR" ]] || { bpw_error "工作目录不存在：$WORK_DIR"; exit 1; }
-  while IFS= read -r -d '' project_path; do
-    process_project "$project_path" || failures=$((failures + 1))
-  done < <(find "$WORK_DIR" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
+  "$BPW_ROOT/scripts/workflow-engine.sh" paths > "$paths_file" || { rm -f "$paths_file"; exit 1; }
 else
   bpw_error "scan-projects.sh 参数错误"
+  rm -f "$paths_file"
   exit 2
 fi
+while IFS= read -r -d '' project_path; do
+  process_project "$project_path" || failures=$((failures + 1))
+done < "$paths_file"
+rm -f "$paths_file"
 
 if (( failures != 0 )); then
   operation_detail="project_failures=$failures"

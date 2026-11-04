@@ -1,8 +1,12 @@
 # better-photography-workflow
 
-一个仅支持 macOS、无第三方依赖的摄影工作流自动化命令行工具。它会扫描摄影项目目录，在 Apple「提醒事项」中创建四阶段任务，可补齐统一的项目目录结构，并可通过 `rsync` 将项目安全地增量备份到真实挂载的外接硬盘。
+一个面向视频创作者的原生 macOS 素材与项目工作流。SwiftUI App 会读取主素材库中的真实项目目录，按设备展示素材来源，保存每个项目的制作阶段、进度、收藏与 Done 状态；底层命令行仍可创建提醒事项、补齐目录结构，并通过 `rsync` 进行可选的第二份备份。
 
-项目只使用 macOS 原生能力：zsh、AppleScript、Reminders、launchd、rsync 及系统命令；同时支持 Apple Silicon 与 Intel Mac。不开发 GUI，也不会直接读写 Apple Photos Library 的内部文件。
+项目只使用 macOS 原生能力：SwiftUI、zsh、AppleScript、Reminders、launchd、rsync 及系统命令；同时支持 Apple Silicon 与 Intel Mac，也不会直接读写 Apple Photos Library 的内部文件。
+
+## 素材导入 MVP
+
+已增加稳定 Project ID、多 Workspace、媒体扫描、复制导入、manifest、重复保护、Session 匹配和 Primary 项目备份。今晚使用步骤、配置、迁移和实测边界见 [素材导入说明](docs/ingest.md)。
 
 ## 快速开始
 
@@ -11,16 +15,20 @@
 export PATH="$HOME/.local/bin:$PATH"
 bpw doctor
 bpw new "猫咪写真"
+./app/build-app.sh
+open "$HOME/Library/Caches/better-photography-workflow/app/摄影工作流.app"
 ```
 
 默认会创建：
 
 ```text
 ~/Pictures/Photography_Work/2026-07-19_猫咪写真/
-├── 01_RAW/
-├── 02_EXPORT/
-├── 03_PRINT/
-└── 99_REFERENCE/
+├── 01_MEDIA/
+├── 02_PHOTO/
+├── 03_VIDEO/
+├── 04_CACHE_DELETE/
+├── 05_EXPORTS/
+└── 99_DOC/
 ```
 
 并在配置的提醒事项列表中创建初筛、精选、调色精修、导出归档四项任务。默认截止日分别为项目创建后第 1、3、7、10 天的 20:00。
@@ -35,6 +43,9 @@ bpw new "项目名称"       新建项目并立即创建提醒事项
 bpw scan                 扫描一级非隐藏项目目录
 bpw sync                 执行安全增量备份
 bpw status               查看配置、项目、硬盘和服务状态
+bpw projects list        以 JSON 输出真实项目及工作流状态
+bpw projects set-stage <项目路径> <阶段>
+bpw projects set-favorite <项目路径> <true|false>
 bpw doctor               检查系统环境、配置、权限和服务
 bpw logs                 查看最近 100 行主日志
 bpw version              显示当前版本
@@ -48,10 +59,12 @@ bpw help                 显示帮助
 
 原生 macOS 菜单栏与设置应用的构建和使用方法见：[图形界面](docs/gui.md)。
 
+主素材库可以位于 Mac，也可以选择 SSD 的项目库根目录，例如 `/Volumes/<SSD 名称>/01_PROJECTS`。新项目名称以年份开头（如 `2027-01_旅行`）时会放入对应年份目录；没有年份前缀时按当前年份归档。项目内部按配置创建子目录。如果 SSD 是唯一素材库，可将它设为主素材库并关闭可选的第二份备份。
+
 ## 安全与幂等
 
-- 只处理 `WORK_DIR` 下的一级非隐藏目录。
-- 第一层幂等：使用项目绝对路径的 SHA-256 在 `~/.local/state/better-photography-workflow/projects` 中保存完成标记。
+- 处理 online Primary Workspace 下的一级非隐藏项目目录。
+- 第一层幂等：项目 UUID 完成标记；旧路径 SHA-256 标记与阶段状态会自动复制迁移，旧标记保留。
 - 第二层幂等：AppleScript 在列表中查找标题、完整项目路径及来源均匹配的提醒事项。
 - 仅在四条提醒事项全部成功创建或确认已存在后写入本地状态；中断后重试不会重复创建。
 - 备份同时检查 `diskutil` 与系统挂载表，不会只因 `/Volumes/卷名` 目录存在就判断硬盘在线。

@@ -1,11 +1,13 @@
 on run argv
-    if (count of argv) is not 17 then error "Expected 17 arguments"
+    if (count of argv) is not 19 then error "Expected 19 arguments"
 
     set reminderListName to item 1 of argv
     set projectPath to item 2 of argv
     set projectEpoch to (item 3 of argv) as integer
     set reminderHour to (item 4 of argv) as integer
     set reminderMinute to (item 5 of argv) as integer
+    set projectID to item 18 of argv
+    set originalPath to item 19 of argv
     set createdCount to 0
     set skippedCount to 0
 
@@ -23,13 +25,13 @@ on run argv
             set taskDescription to item (argumentOffset + 2) of argv
             set projectName to my basenameOfPath(projectPath)
             set taskTitle to "【" & projectName & "】" & taskName
-            set taskBody to "摄影项目路径：" & projectPath & return & "任务说明：" & taskDescription & return & "来源：better-photography-workflow"
+            set taskBody to "摄影项目路径：" & projectPath & return & "任务说明：" & taskDescription & return & "来源：better-photography-workflow" & return & "BPW Project ID：" & projectID & return
 
             set isDuplicate to false
-            set sameNameReminders to every reminder of targetList whose name is taskTitle
+            set sameNameReminders to every reminder of targetList whose name ends with taskName
             repeat with existingReminder in sameNameReminders
                 try
-                    if (body of existingReminder as text) contains ("摄影项目路径：" & projectPath & return) and (body of existingReminder as text) contains "来源：better-photography-workflow" then
+                    if ((body of existingReminder as text) contains ("BPW Project ID：" & projectID & return) or (body of existingReminder as text) contains ("摄影项目路径：" & originalPath & return)) and (body of existingReminder as text) contains "来源：better-photography-workflow" then
                         set isDuplicate to true
                         exit repeat
                     end if

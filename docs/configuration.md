@@ -57,3 +57,7 @@ Before sourcing, bpw verifies that it is a normal non-symlink file, is owned by 
 ## Applying changes
 
 Most values are read at every invocation. Rerun `bpw install` after changing paths or intervals so LaunchAgent files are regenerated and reloaded.
+
+## Workspace pool
+
+`WORK_DIR` remains the default-workspace bridge. Additional workspaces, UUID resolution and `auto/local/ask` preferences use the separate private `workspaces.json`; GUI plist saves preserve this pool. Configure it with `bpw workspace add/list/preference`. See [ingest.md](ingest.md).

@@ -1,12 +1,39 @@
 import AppKit
 import SwiftUI
 
+struct SettingsHubView: View {
+    @Binding var configuration: BPWConfiguration
+    @State private var selection = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("设置类别", selection: $selection) {
+                Text("项目").tag(0)
+                Text("工作流").tag(1)
+                Text("存储").tag(2)
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 360)
+            .padding()
+
+            Divider()
+
+            switch selection {
+            case 0: GeneralSettingsView(configuration: $configuration)
+            case 1: ReminderSettingsView(configuration: $configuration)
+            default: BackupSettingsView(configuration: $configuration)
+            }
+        }
+        .navigationTitle("设置")
+    }
+}
+
 struct GeneralSettingsView: View {
     @Binding var configuration: BPWConfiguration
 
     var body: some View {
         Form {
-            Section("工作目录") {
+            Section("主素材库") {
                 HStack {
                     TextField("绝对路径", text: $configuration.workDir)
                     Button("选择…") {
@@ -15,7 +42,7 @@ struct GeneralSettingsView: View {
                         }
                     }
                 }
-                Text("自动扫描这里只处理第一层非隐藏目录。")
+                Text("选择项目库根目录，例如 SSD 的 01_PROJECTS。新项目名称以年份开头（如 2027-01_旅行）时会归入对应年份；未写年份则归入今年。")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -100,7 +127,7 @@ struct BackupSettingsView: View {
         Form {
             Section {
                 Toggle("启用外接硬盘备份", isOn: $configuration.enableBackup)
-                Text("备份使用系统 rsync；同步前仍会验证真实挂载点、路径和文件系统。")
+                Text("这是主素材库之外可选的第二份副本。若 SSD 已经是唯一素材库，可保持关闭。备份使用系统 rsync，并在同步前验证真实挂载点、路径和文件系统。")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -125,16 +152,9 @@ struct BackupSettingsView: View {
             .disabled(!configuration.enableBackup)
 
             Section("删除模式") {
-                Toggle("删除目标端中源目录已不存在的文件", isOn: $configuration.backupAllowDelete)
-                    .tint(.red)
-                if configuration.backupAllowDelete {
-                    Label("高风险：目标端多余文件会被删除。首次使用前请先保留另一份备份。",
-                          systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                } else {
-                    Label("安全模式只新增和更新文件，不删除目标端内容。", systemImage: "checkmark.shield")
-                        .foregroundStyle(.secondary)
-                }
+                Text("多 Workspace 备份始终保留目标文件；旧删除配置保留，但本轮 sync 不启用删除。")
+                Label("安全模式只新增和更新文件，不删除目标端内容。", systemImage: "checkmark.shield")
+                    .foregroundStyle(.secondary)
             }
             .disabled(!configuration.enableBackup)
         }

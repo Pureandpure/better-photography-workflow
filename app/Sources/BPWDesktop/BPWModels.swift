@@ -5,7 +5,7 @@ struct BPWConfiguration: Codable, Equatable, Sendable {
     var workDir = ""
     var reminderListName = "🍎摄影工作流"
     var autoCreateProjectStructure = true
-    var projectSubdirectories = ["01_RAW", "02_EXPORT", "03_PRINT", "99_REFERENCE"]
+    var projectSubdirectories = ["01_MEDIA", "02_PHOTO", "03_VIDEO", "04_CACHE_DELETE", "05_EXPORTS", "99_DOC"]
     var reminderHour = 20
     var reminderMinute = 0
     var task1Name = "① 初筛废片"
@@ -61,7 +61,7 @@ struct BPWConfiguration: Codable, Equatable, Sendable {
             return "提醒事项列表名称不能为空。"
         }
         guard !projectSubdirectories.isEmpty,
-              projectSubdirectories.allSatisfy({ !$0.isEmpty && !$0.hasPrefix("/") && !$0.contains("..") }) else {
+              projectSubdirectories.allSatisfy({ !$0.isEmpty && !$0.hasPrefix("/") && !$0.contains("..") && !$0.contains("\n") && !$0.contains("\r") }) else {
             return "项目子目录必须是安全的相对路径。"
         }
         guard (0...23).contains(reminderHour), (0...59).contains(reminderMinute) else {

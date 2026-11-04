@@ -5,14 +5,14 @@ struct BPWDesktopApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("摄影工作流", id: "main") {
+        WindowGroup("创作者工作流", id: "main") {
             RootView(model: model)
-                .frame(minWidth: 820, minHeight: 580)
+                .frame(minWidth: 1100, minHeight: 720)
                 .task { await model.start() }
         }
-        .defaultSize(width: 940, height: 680)
+        .defaultSize(width: 1280, height: 860)
 
-        MenuBarExtra("摄影工作流", systemImage: model.menuSymbol) {
+        MenuBarExtra("创作者工作流", systemImage: model.menuSymbol) {
             MenuBarContent(model: model)
         }
     }
