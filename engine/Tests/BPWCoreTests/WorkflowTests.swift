@@ -26,7 +26,7 @@ final class WorkflowTests: XCTestCase {
     @discardableResult func file(_ name: String = "DCIM/DSC0001.ARW", bytes: String = "original") throws -> URL { let u = card.appendingPathComponent(name); try mkdir(u.deletingLastPathComponent()); try Data(bytes.utf8).write(to: u); return u }
     func scan(_ device: String = "SONY ILCE-7RM5") throws -> MediaScan { try MediaScanner(metadata: FixtureMetadata(device: device)).scan(card) }
     func store(_ volumes: [Volume] = []) throws -> ProjectStore { try ProjectStore(state: state, workDir: work.path, volumes: volumes) }
-    func testNewProjectHasStableIDAndStructure() throws { let s = try store(); let p = try s.create("平潭 & 夏日"); XCTAssertNotNil(UUID(uuidString: p.id)); XCTAssertEqual(URL(fileURLWithPath: p.path).deletingLastPathComponent().lastPathComponent, String(day(Date()).prefix(4))); XCTAssertTrue(fm.fileExists(atPath: URL(fileURLWithPath: p.path).appendingPathComponent("01_MEDIA").path)); XCTAssertEqual(try s.refresh().first?.id, p.id) }
+    func testNewProjectHasStableIDAndStructure() throws { let s = try store(); let p = try s.create("平潭 & 夏日"); XCTAssertNotNil(UUID(uuidString: p.id)); XCTAssertEqual(URL(fileURLWithPath: p.path).deletingLastPathComponent().lastPathComponent, String(day(Date()).prefix(4))); for kind in ["VIDEO", "PHOTO", "AUDIO"] { XCTAssertTrue(fm.fileExists(atPath: URL(fileURLWithPath: p.path).appendingPathComponent("01_MEDIA/\(kind)").path)) }; XCTAssertEqual(try s.refresh().first?.id, p.id) }
     func testDeviceDiscoveryAcrossMixedMediaLayouts() throws {
         let s = try store(), p = try s.create("混合目录")
         let root = URL(fileURLWithPath: p.path)
@@ -159,7 +159,7 @@ final class WorkflowTests: XCTestCase {
             try writeJPEG(source.appendingPathComponent("DCIM/DJI_001.JPG"), model: model, timestamp: "2026:09:30 09:12:00")
             try writeJPEG(source.appendingPathComponent("DCIM/DJI_002.JPG"), model: model, timestamp: "2026:09:30 17:53:00")
             let result = try execute(["ingest", source.path]); XCTAssertTrue(result.contains("Session 自动匹配"))
-            XCTAssertTrue(fm.fileExists(atPath: URL(fileURLWithPath: p.path).appendingPathComponent("01_MEDIA/2026-09-30/\(device)/JPEG/DJI_001.JPG").path))
+            XCTAssertTrue(fm.fileExists(atPath: URL(fileURLWithPath: p.path).appendingPathComponent("01_MEDIA/PHOTO/2026-09-30/\(device)/JPEG/DJI_001.JPG").path))
         }
         let retry = try execute(["ingest", card.path]); XCTAssertTrue(retry.contains("skip DCIM/DSC0001.JPG"))
         XCTAssertTrue(fm.fileExists(atPath: card.appendingPathComponent("DCIM/DSC0001.JPG").path))

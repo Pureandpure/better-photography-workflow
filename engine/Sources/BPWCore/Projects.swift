@@ -232,6 +232,7 @@ public final class ProjectStore {
         try fm.createDirectory(at: project, withIntermediateDirectories: false)
         _ = try identity(project, workspace: w.id)
         for sub in projectSubdirectories { try mkdir(project.appendingPathComponent(sub)) }
+        for kind in ["VIDEO", "PHOTO", "AUDIO"] { try mkdir(project.appendingPathComponent("01_MEDIA/\(kind)")) }
         guard let record = try refresh().first(where: { $0.path == project.path }) else { throw WorkflowError("新项目登记失败") }; return record
     }
     public func project(_ idOrPath: String) throws -> ProjectRecord {

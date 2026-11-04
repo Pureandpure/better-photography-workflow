@@ -38,15 +38,15 @@ CONFIG
 mkdir -p "$TEST_ROOT/card/DCIM"
 print -n -r -- 'fixture original' > "$TEST_ROOT/card/DCIM/DSC0001.ARW"
 "$ROOT/bin/bpw" ingest "$TEST_ROOT/card" --new '旅行 测试' --device A7R5 > "$TEST_ROOT/ingest.log"
-project="$WORK_MOUNT/Projects/$(date '+%Y-%m-%d')_旅行 测试"
+project="$WORK_MOUNT/Projects/$(date '+%Y')/$(date '+%Y-%m-%d')_旅行 测试"
 id="$(plutil -extract id raw -o - "$project/.bpw-project.json")"
-test -f "$project/01_RAW/$(date '+%Y-%m-%d')/A7R5/RAW/DSC0001.ARW"
+test -f "$project/01_MEDIA/PHOTO/$(date '+%Y-%m-%d')/A7R5/RAW/DSC0001.ARW"
 print 'ok - real ExFAT exclusive publication works'
 "$ROOT/bin/bpw" ingest "$TEST_ROOT/card" --project "$id" --device A7R5 > "$TEST_ROOT/retry.log"
 grep -q 'skip DCIM/DSC0001.ARW' "$TEST_ROOT/retry.log"
 print 'ok - ExFAT duplicate skip works'
 "$ROOT/bin/bpw" sync --project "$id" > "$TEST_ROOT/sync.log"
-backup_file="$BACKUP_MOUNT/Backup/$id/${project:t}/01_RAW/$(date '+%Y-%m-%d')/A7R5/RAW/DSC0001.ARW"
+backup_file="$BACKUP_MOUNT/Backup/$id/${project:t}/01_MEDIA/PHOTO/$(date '+%Y-%m-%d')/A7R5/RAW/DSC0001.ARW"
 cmp "$backup_file" "$TEST_ROOT/card/DCIM/DSC0001.ARW"
 print 'ok - real mounted backup content matches source'
 print -n -r -- 'retained' > "$BACKUP_MOUNT/Backup/$id/${project:t}/retain.txt"

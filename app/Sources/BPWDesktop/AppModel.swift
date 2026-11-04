@@ -91,7 +91,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func inspectMedia(source: String, device: String) async {
+    func inspectMedia(source: String, device: String, recorder: String) async {
         ingestScan = nil
         plannedImportDates = []
         plannedImportContext = ""
@@ -100,6 +100,7 @@ final class AppModel: ObservableObject {
         await perform {
             var args = ["media", source]
             if !device.isEmpty { args += ["--device", device] }
+            if !recorder.isEmpty { args += ["--recorder", recorder] }
             args.append("--progress")
             let result = try await self.client.run(args, onOutput: { line in
                 guard line.hasPrefix("BPW_SCAN_PROGRESS ") else { return }
@@ -112,7 +113,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func importMedia(source: String, device: String, projectID: String, newName: String,
+    func importMedia(source: String, device: String, recorder: String, projectID: String, newName: String,
                      workspaceID: String, checksum: Bool, selectedDates: Set<String>, dryRun: Bool) async {
         guard !source.isEmpty, !projectID.isEmpty || !newName.isEmpty else {
             errorMessage = "请选择来源与项目，或输入新项目名称。"; return
@@ -126,6 +127,7 @@ final class AppModel: ObservableObject {
             args += projectID.isEmpty ? ["--new", newName] : ["--project", projectID]
             if !workspaceID.isEmpty { args += ["--workspace", workspaceID] }
             if !device.isEmpty { args += ["--device", device] }
+            if !recorder.isEmpty { args += ["--recorder", recorder] }
             args += ["--dates", selectedDates.sorted().joined(separator: ",")]
             if checksum { args.append("--checksum") }
             if dryRun { args.append("--dry-run") }
@@ -144,7 +146,7 @@ final class AppModel: ObservableObject {
             self.ingestProgress = result.succeeded ? (dryRun ? "导入计划已生成" : "导入完成") : "导入失败"
             if dryRun && result.succeeded {
                 self.plannedImportDates = selectedDates.sorted()
-                self.plannedImportContext = Self.importContext(source: source, device: device, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum)
+                self.plannedImportContext = Self.importContext(source: source, device: device, recorder: recorder, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum)
             }
             if !dryRun { self.plannedImportDates = []; self.plannedImportContext = "" }
             let history = try await self.client.run(["imports"])
@@ -157,13 +159,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func hasImportPlan(for dates: Set<String>, source: String, device: String, projectID: String,
+    func hasImportPlan(for dates: Set<String>, source: String, device: String, recorder: String, projectID: String,
                        newName: String, workspaceID: String, checksum: Bool) -> Bool {
-        plannedImportDates == dates.sorted() && plannedImportContext == Self.importContext(source: source, device: device, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum)
+        plannedImportDates == dates.sorted() && plannedImportContext == Self.importContext(source: source, device: device, recorder: recorder, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum)
     }
 
-    private static func importContext(source: String, device: String, projectID: String, newName: String, workspaceID: String, checksum: Bool) -> String {
-        [source, device, projectID, newName, workspaceID, checksum ? "checksum" : "standard"].joined(separator: "\u{0}")
+    private static func importContext(source: String, device: String, recorder: String, projectID: String, newName: String, workspaceID: String, checksum: Bool) -> String {
+        [source, device, recorder, projectID, newName, workspaceID, checksum ? "checksum" : "standard"].joined(separator: "\u{0}")
     }
 
     func cancelImport() async {

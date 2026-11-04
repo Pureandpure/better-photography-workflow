@@ -7,7 +7,7 @@ REMINDER_LIST_NAME="🍎摄影工作流"
 # 是否自动创建项目内部目录
 AUTO_CREATE_PROJECT_STRUCTURE=true
 
-# 新项目默认子目录
+# 新项目默认子目录；导入原始素材固定写入 01_MEDIA 的 VIDEO、PHOTO、AUDIO 分类
 PROJECT_SUBDIRECTORIES=(
   "01_MEDIA"
   "02_PHOTO"

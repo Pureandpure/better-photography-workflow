@@ -17,6 +17,10 @@ bpw new "Cat Portrait"
 
 The default workspace is `~/Pictures/Photography_Work`. A new project receives the local date and standard subdirectories, then four due-dated reminders are added to the configured Reminders list.
 
+## Media folders and Final Cut Pro
+
+New imports use `01_MEDIA/VIDEO/<date>/<device>`, `01_MEDIA/PHOTO/<date>/<device>/RAW|JPEG`, and `01_MEDIA/AUDIO/<date>/<recorder>`. In Final Cut Pro choose `01_MEDIA/VIDEO`, optionally `01_MEDIA/AUDIO`, select “Leave files in place”, and optionally “From folders” for keywords. This workflow has not been validated in a real FCP session. Run `bpw migrate-media-layout --project <UUID>` to preview a single legacy project and add `--execute` only when ready. See [ingest](docs/ingest.md).
+
 ## Photography ingest MVP
 
 See [setup, travel steps, safety and validation limits](docs/ingest.md). Stable Project IDs, UUID-based external workspaces, camera ingest, resumable copy, manifests, conservative Session matching and Primary-project backups are available through the CLI, with basic GUI import controls. Source media is retained.

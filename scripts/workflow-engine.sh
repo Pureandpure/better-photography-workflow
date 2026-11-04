@@ -15,6 +15,13 @@ if [[ ! -x "$engine" && -d "$BPW_ROOT/engine" ]]; then
   fi
 fi
 [[ -x "$engine" ]] || { bpw_error '找不到原生导入后端，请重新运行 ./install.sh（需要 Xcode Command Line Tools）'; exit 1; }
+if [[ "${1:-}" == migrate-media-layout ]]; then
+  lock_dir="$BPW_STATE_DIR/ingest.lock"
+  if ! bpw_acquire_lock "$lock_dir" migration; then bpw_error '另一个导入、迁移或备份正在运行'; exit 1; fi
+  trap 'bpw_release_lock "$lock_dir" || true' EXIT
+  "$engine" "$@"
+  exit $?
+fi
 if [[ "${1:-}" != ingest ]]; then
   exec "$engine" "$@"
 fi

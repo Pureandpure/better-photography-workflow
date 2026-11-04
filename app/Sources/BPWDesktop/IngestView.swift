@@ -39,6 +39,7 @@ struct IngestScanRecord: Codable, Sendable {
     var sourcePath: String
     var devices: [String]
     var files: [File]
+    var orphanSidecars: [String]?
     var dates: [String] { Set(files.map { Self.day(Date(timeIntervalSince1970: $0.captureTimestamp)) }).sorted() }
     var dateGroups: [MediaDateGroup] {
         Dictionary(grouping: files) { Self.day(Date(timeIntervalSince1970: $0.captureTimestamp)) }
@@ -76,6 +77,8 @@ struct IngestView: View {
     @ObservedObject var model: AppModel
     @State private var source = ""
     @State private var device = ""
+    @State private var recorder = ""
+    @State private var scannedRecorder = ""
     @State private var projectID = ""
     @State private var newName = ""
     @State private var workspaceID = ""
@@ -100,10 +103,12 @@ struct IngestView: View {
                     Text("自动识别").tag("")
                     ForEach(["A7R5", "Pocket3", "Action6", "Air3S", "Unknown"], id: \.self) { Text($0).tag($0) }
                 }
+                TextField("录音设备名称（留空为 Audio）", text: $recorder).textFieldStyle(.roundedBorder)
                 Button("扫描拍摄时间") {
                     Task {
-                        await model.inspectMedia(source: source, device: device)
+                        await model.inspectMedia(source: source, device: device, recorder: recorder)
                         scannedDevice = device
+                        scannedRecorder = recorder
                         selectProjectDateIfAvailable()
                     }
                 }
@@ -133,6 +138,10 @@ struct IngestView: View {
                     ForEach(scan.destinationGroups(selectedDates: selectedDates), id: \.self) { group in
                         Text(group).font(.caption).foregroundStyle(.secondary)
                     }
+                    if let orphans = scan.orphanSidecars, !orphans.isEmpty {
+                        Text("未找到唯一 RAW 主文件的附属文件（不会导入）：\n" + orphans.joined(separator: "\n"))
+                            .font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                    }
                     if scan.files.contains(where: { $0.dateSource.hasPrefix("file.") }) {
                         Text("部分时间来自文件创建或修改日期，请检查并手动选择项目。")
                             .font(.caption).foregroundStyle(.orange)
@@ -149,14 +158,14 @@ struct IngestView: View {
                 Toggle("完整 checksum 校验（增加目标读取时间）", isOn: $checksum)
                 HStack {
                     Button("生成导入计划") {
-                        Task { await model.importMedia(source: source, device: device, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum, selectedDates: selectedDates, dryRun: true) }
+                        Task { await model.importMedia(source: source, device: device, recorder: recorder, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum, selectedDates: selectedDates, dryRun: true) }
                     }
-                    .disabled(selectedDates.isEmpty || source != model.ingestScan?.sourcePath || device != scannedDevice || model.isWorking)
+                    .disabled(selectedDates.isEmpty || source != model.ingestScan?.sourcePath || device != scannedDevice || recorder != scannedRecorder || model.isWorking)
                     Button("开始导入") {
-                        Task { await model.importMedia(source: source, device: device, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum, selectedDates: selectedDates, dryRun: false) }
+                        Task { await model.importMedia(source: source, device: device, recorder: recorder, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum, selectedDates: selectedDates, dryRun: false) }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(selectedDates.isEmpty || source != model.ingestScan?.sourcePath || device != scannedDevice || !model.hasImportPlan(for: selectedDates, source: source, device: device, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum) || model.isWorking)
+                    .disabled(selectedDates.isEmpty || source != model.ingestScan?.sourcePath || device != scannedDevice || recorder != scannedRecorder || !model.hasImportPlan(for: selectedDates, source: source, device: device, recorder: recorder, projectID: projectID, newName: newName, workspaceID: workspaceID, checksum: checksum) || model.isWorking)
                     if model.isWorking {
                         ProgressView().controlSize(.small)
                         Text("正在执行，请勿拔出媒体或工作盘。")

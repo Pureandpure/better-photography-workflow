@@ -25,7 +25,8 @@ public protocol MetadataProviding { func capture(_ url: URL) throws -> CaptureMe
 public struct NativeMetadata: MetadataProviding {
     public init() {}
     public func capture(_ url: URL) throws -> CaptureMetadata {
-        if ["mp4", "mov", "m4v"].contains(url.pathExtension.lowercased()) {
+        let audio = ["wav", "m4a", "aac", "mp3", "aiff", "aif", "flac"].contains(url.pathExtension.lowercased())
+        if audio || ["mp4", "mov", "m4v"].contains(url.pathExtension.lowercased()) {
             let asset = AVURLAsset(url: url)
             var evidence = ""
             var date: Date?
@@ -36,7 +37,7 @@ public struct NativeMetadata: MetadataProviding {
                     date = item.dateValue ?? item.stringValue.flatMap { ISO8601DateFormatter().date(from: $0) } ?? date
                 }
             }
-            if let date { return CaptureMetadata(date: date, deviceEvidence: evidence, provenance: "video.creationDate") }
+            if let date { return CaptureMetadata(date: date, deviceEvidence: evidence, provenance: audio ? "audio.creationDate" : "video.creationDate") }
             return CaptureMetadata(date: nil, deviceEvidence: evidence)
         }
         guard let image = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -58,9 +59,17 @@ public struct MediaFile: Codable {
     public var dateSource: String
     public var device: String
     public var kind: String
+    public var primarySourcePath: String? = nil
     public func destinationRelativePath(in mediaDirectory: String = "01_MEDIA") -> String {
         let date = day(Date(timeIntervalSince1970: captureTimestamp))
-        return "\(mediaDirectory)/\(date)/\(device)/\(kind)/\(URL(fileURLWithPath: relativeSourcePath).lastPathComponent)"
+        let filename = URL(fileURLWithPath: relativeSourcePath).lastPathComponent
+        switch kind {
+        case "VIDEO", "AUDIO": return "\(mediaDirectory)/\(kind)/\(date)/\(device)/\(filename)"
+        default: return "\(mediaDirectory)/PHOTO/\(date)/\(device)/\(kind == "JPEG" ? "JPEG" : "RAW")/\(filename)"
+        }
+    }
+    public func legacyDestinationRelativePath(in mediaDirectory: String = "01_MEDIA") -> String {
+        "\(mediaDirectory)/\(day(Date(timeIntervalSince1970: captureTimestamp)))/\(device)/\(kind)/\(URL(fileURLWithPath: relativeSourcePath).lastPathComponent)"
     }
 }
 public struct MediaScan: Codable {
@@ -68,6 +77,7 @@ public struct MediaScan: Codable {
     public var sourceVolumeUUID: String?
     public var devices: [String]
     public var files: [MediaFile]
+    public var orphanSidecars: [String] = []
     public var fileCount: Int { files.count }
     public var totalBytes: Int64 { files.reduce(0) { $0 + $1.size } }
     public var startTime: Double { files.map(\.captureTimestamp).min() ?? 0 }
@@ -83,7 +93,7 @@ public struct MediaScan: Codable {
         let available = Set(dates)
         guard selectedDates.isSubset(of: available) else { throw WorkflowError("选择的拍摄日期不在本次扫描结果中") }
         let selectedFiles = files.filter { selectedDates.contains(day(Date(timeIntervalSince1970: $0.captureTimestamp))) }
-        return MediaScan(sourcePath: sourcePath, sourceVolumeUUID: sourceVolumeUUID, devices: Set(selectedFiles.map(\.device)).sorted(), files: selectedFiles)
+        return MediaScan(sourcePath: sourcePath, sourceVolumeUUID: sourceVolumeUUID, devices: Set(selectedFiles.map(\.device)).sorted(), files: selectedFiles, orphanSidecars: orphanSidecars)
     }
 }
 public struct MediaDateGroup: Codable, Equatable {
@@ -106,32 +116,55 @@ public struct DeviceDetector {
 public struct MediaScanner {
     public let metadata: MetadataProviding
     public init(metadata: MetadataProviding = NativeMetadata()) { self.metadata = metadata }
-    public func scan(_ source: URL, overrideDevice: String? = nil, volumeUUID: String? = nil, onProgress: ((Int) -> Void)? = nil) throws -> MediaScan {
+    public func scan(_ source: URL, overrideDevice: String? = nil, overrideRecorder: String? = nil, volumeUUID: String? = nil, onProgress: ((Int) -> Void)? = nil) throws -> MediaScan {
         let source = systemURL(source)
         try safePath(source)
         guard (try source.resourceValues(forKeys: [.isDirectoryKey])).isDirectory == true else { throw WorkflowError("媒体来源必须是目录") }
         if let overrideDevice, !DeviceDetector.devices.contains(overrideDevice) { throw WorkflowError("设备参数必须是 A7R5/Pocket3/Action6/Air3S/Unknown") }
-        let raw = ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"]
+        if let name = overrideRecorder, name.isEmpty || name == "." || name == ".." || name.contains("/") || name.contains("\n") || name.contains("\r") { throw WorkflowError("录音设备名称无效") }
+        let raw = ["arw", "raw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"]
         let image = ["jpg", "jpeg", "heic", "heif", "png", "tif", "tiff"]
         let video = ["mp4", "mov", "m4v", "mts", "m2ts"]
+        let audio = ["wav", "m4a", "aac", "mp3", "aiff", "aif", "flac"]
         var files: [MediaFile] = []
+        var sidecars: [(URL, Int64)] = []
         var enumerationError: Error?
         guard let walker = fm.enumerator(at: source, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .creationDateKey, .contentModificationDateKey], options: [.skipsHiddenFiles], errorHandler: { _, error in enumerationError = error; return false }) else { throw WorkflowError("无法枚举媒体目录") }
         while let u = walker.nextObject() as? URL {
             let v = try u.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .creationDateKey, .contentModificationDateKey])
             guard v.isSymbolicLink != true else { throw WorkflowError("媒体目录含符号链接，拒绝扫描：\(u.path)") }
             let ext = u.pathExtension.lowercased()
-            guard v.isRegularFile == true, (raw + image + video).contains(ext) else { continue }
+            if v.isRegularFile == true, ["xmp", "photo-edit"].contains(ext) { sidecars.append((u, Int64(v.fileSize ?? 0))); continue }
+            guard v.isRegularFile == true, (raw + image + video + audio).contains(ext) else { continue }
             let m = try metadata.capture(u)
             guard let capture = MediaCaptureDateResolver().resolve(metadata: m, creationDate: v.creationDate, modificationDate: v.contentModificationDate) else { throw WorkflowError("无法读取拍摄时间：\(u.path)") }
             let relative = String(u.path.dropFirst(source.path.count + 1))
-            files.append(MediaFile(relativeSourcePath: relative, size: Int64(v.fileSize ?? 0), captureTimestamp: capture.date.timeIntervalSince1970, dateSource: capture.provenance, device: overrideDevice ?? DeviceDetector.detect(metadata: m.deviceEvidence, relative: relative, source: source.lastPathComponent), kind: raw.contains(ext) ? "RAW" : video.contains(ext) ? "VIDEO" : "JPEG"))
+            let kind = raw.contains(ext) ? "RAW" : video.contains(ext) ? "VIDEO" : audio.contains(ext) ? "AUDIO" : "JPEG"
+            let device = kind == "AUDIO" ? (overrideRecorder ?? "Audio") : (overrideDevice ?? DeviceDetector.detect(metadata: m.deviceEvidence, relative: relative, source: source.lastPathComponent))
+            files.append(MediaFile(relativeSourcePath: relative, size: Int64(v.fileSize ?? 0), captureTimestamp: capture.date.timeIntervalSince1970, dateSource: capture.provenance, device: device, kind: kind))
             if files.count == 1 || files.count % 25 == 0 { onProgress?(files.count) }
         }
         if let enumerationError { throw enumerationError }
-        guard !files.isEmpty else { throw WorkflowError("没有发现支持的媒体文件") }
-        files.sort { $0.relativeSourcePath < $1.relativeSourcePath }
-        return MediaScan(sourcePath: source.path, sourceVolumeUUID: volumeUUID, devices: Set(files.map(\.device)).sorted(), files: files)
+        guard !files.isEmpty || !sidecars.isEmpty else { throw WorkflowError("没有发现支持的媒体文件") }
+        var orphans: [String] = []
+        for (url, size) in sidecars {
+            let relative = String(url.path.dropFirst(source.path.count + 1))
+            let stem = url.deletingPathExtension().lastPathComponent.lowercased()
+            let matches = files.filter { file in
+                guard file.kind == "RAW" else { return false }
+                let main = URL(fileURLWithPath: file.relativeSourcePath)
+                return main.deletingLastPathComponent().path == URL(fileURLWithPath: relative).deletingLastPathComponent().path && main.deletingPathExtension().lastPathComponent.lowercased() == stem
+            }
+            guard matches.count == 1, let main = matches.first else { orphans.append(relative); continue }
+            files.append(MediaFile(relativeSourcePath: relative, size: size, captureTimestamp: main.captureTimestamp, dateSource: main.dateSource, device: main.device, kind: "SIDECAR", primarySourcePath: main.relativeSourcePath))
+        }
+        files.sort {
+            let left = $0.primarySourcePath ?? $0.relativeSourcePath, right = $1.primarySourcePath ?? $1.relativeSourcePath
+            if left != right { return left < right }
+            if ($0.primarySourcePath == nil) != ($1.primarySourcePath == nil) { return $0.primarySourcePath == nil }
+            return $0.relativeSourcePath < $1.relativeSourcePath
+        }
+        return MediaScan(sourcePath: source.path, sourceVolumeUUID: volumeUUID, devices: Set(files.map(\.device)).sorted(), files: files, orphanSidecars: orphans.sorted())
     }
 }
 public func mediaSources(volumes: [Volume], pool: WorkspacePool, backupPath: String, protectedBackupVolumeIDs: [String] = []) -> [Volume] {

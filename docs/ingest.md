@@ -10,7 +10,7 @@
 
 ## 今晚步骤
 
-此版本保留在本地工作区，没有 commit/push。不要为使用本地改动运行 `git pull`。
+从当前源码安装并配置：
 
 ```zsh
 ./install.sh
@@ -76,9 +76,10 @@ bpw status
 ```text
 2026/2026-09_平潭旅行/
 ├── .bpw-project.json
-├── 01_MEDIA/YYYY-MM-DD/A7R5/RAW/DSC01234.ARW
-├── 01_MEDIA/YYYY-MM-DD/A7R5/JPEG/DSC01234.JPG
-├── 01_MEDIA/YYYY-MM-DD/Pocket3/VIDEO/DJI_001.MP4
+├── 01_MEDIA/PHOTO/YYYY-MM-DD/A7R5/RAW/DSC01234.ARW
+├── 01_MEDIA/PHOTO/YYYY-MM-DD/A7R5/JPEG/DSC01234.JPG
+├── 01_MEDIA/VIDEO/YYYY-MM-DD/Pocket3/DJI_001.MP4
+├── 01_MEDIA/AUDIO/YYYY-MM-DD/Audio/recording.wav
 ├── 02_PHOTO/
 ├── 03_VIDEO/
 ├── 04_CACHE_DELETE/
@@ -89,7 +90,7 @@ bpw status
 
 项目库根目录选择 `01_PROJECTS` 这一层。名称以 `YYYY`、`YYYY-MM` 或 `YYYY-MM-DD` 加下划线开头时，项目会进入匹配的年份文件夹；没有年份前缀时归入当前年份。
 
-媒体原文件名不变。RAW / JPEG（包含 HEIC/PNG）/ VIDEO 分类为保守统一布局；DJI 也按实际类型分类。`MediaCaptureDateResolver` 集中处理 metadata 优先，其次文件 birth time、最后 mtime。EXIF 没有时区时采用当前 Mac 时区；QuickTime 携带偏移量的日期先转成绝对时刻再按本地日历分组，旅行时仍需核对相机与 Mac 时钟。
+媒体原文件名不变。RAW / JPEG（包含 HEIC/PNG/TIFF）/ VIDEO / AUDIO 分类为保守统一布局；DJI 也按实际类型分类。`MediaCaptureDateResolver` 集中处理 metadata 优先，其次文件 birth time、最后 mtime。EXIF 没有时区时采用当前 Mac 时区；QuickTime 携带偏移量的日期先转成绝对时刻再按本地日历分组，旅行时仍需核对相机与 Mac 时钟。
 
 本地状态继续使用 `~/.local/state/better-photography-workflow`：`workspaces.json`、`projects.json`、`sessions.json`、`import-history.json`（最近 100 次成功导入摘要）、`last-import.json`、原有 logs/status。Manifest 留在项目中，会随备份一起保留。GUI 显示最近成功导入、日期分组、字节和文件进度、当前文件、平均速度与预计剩余时间；扫描每发现 25 个素材报告一次计数。
 
@@ -98,6 +99,26 @@ Manifest 先记 running，逐文件原子记 verified，最后 success；错误�
 重复导入有对应 manifest 且源与目标 stat fingerprint（device/inode/size/mtime/ctime）、路径、capture timestamp 全部未变时快速 skip。来源换卡、目标改变、无记录或 `--checksum` 时比较内容；同名异内容是 conflict，整批预检失败，不覆盖。第一次复制流中计算哈希无需单独再读几百 GB 源文件。正常重复无需全量 hash；冲突比较和完整 checksum 可能较慢。
 
 正常中断/失败保留 verified 文件，再执行相同命令即可跳过已完成文件、补未完成文件。使用 GUI“安全取消”或 `bpw cancel-ingest` 可在当前分块/文件边界停止；句柄关闭，未完成临时文件清理，已完成文件保留，manifest 标记 cancelled。强制终止可能留下 `.bpw/partials`，它们不会被当作成功媒体，也不会被同步。复制保持串行。空间预留为待复制 bytes 的 5%，至少 256 MiB。
+
+
+## Final Cut Pro 和旧项目迁移
+
+Final Cut Pro 推荐选择 `01_MEDIA/VIDEO`，需要独立录音时按需同时选择 `01_MEDIA/AUDIO`，选择“让文件保留在原位”，需要时启用“从文件夹创建关键词”。照片软件可选择 `01_MEDIA/PHOTO`。这只是建议操作，尚未通过真实 FCP 验证。`02_PHOTO` 保存精选、编辑和照片导出；`03_VIDEO` 保存 FCP Library、音乐、图形和配音等工作文件。
+
+独立录音支持 wav、m4a、aac、mp3、aiff、aif、flac；优先读取可用媒体创建日期，回退到文件创建时间、修改时间。未指定时设备为 `Audio`，可在 GUI 填写录音设备名称，或使用 `bpw ingest <来源> --recorder "Zoom H6"`。
+
+来源中同目录、同 basename 且唯一对应 RAW 的 `.xmp` 和 `.photo-edit` 一起复制到 RAW 目录，计入 manifest、数量和校验；无对应或有多个对应 RAW 的附属文件在扫描报告中列出，不能自动归属。旧 manifest 不会重写；重复导入会检查旧位置和 manifest 记录的位置。若旧主文件与新附属文件不在同一目录，先迁移项目。
+
+```zsh
+bpw project list
+bpw migrate-media-layout --project <UUID>            # 仅规划，不移动
+bpw migrate-media-layout --project <UUID> --dry-run  # 同上
+bpw migrate-media-layout --project <UUID> --execute --checksum
+```
+
+迁移仅处理所选项目的 `01_MEDIA`。报告列出旧、新路径、类型、日期、设备、主从关系、未分类文件、孤立 sidecar、冲突和保留目录。执行先检查整批冲突，再按组复制、校验，组内全部验证后移除旧文件；内容不同绝不覆盖。为支持恢复和识别同内容，迁移会读取 SHA-256；`--checksum` 还在发布前校验临时副本。进度和内容校验记录保存在 `.bpw/media-layout-migrations/`，中断后用相同执行命令继续；完成报告可用于 Lightroom/FCP 重新链接。空目录保留；强制终止可能留下隐藏的 `.bpw-migration-*` 临时目录，报告会列出其中未分类文件。执行前请自行检查计划和备份；不要对尚未授权的项目执行。
+
+通过 `bpw` 执行规划和迁移时会与导入、备份互斥。迁移采用复制后校验，运行期间需要容纳当前文件组的额外空间；空间不足时保留未删除的源文件，可处理空间后重试。
 
 ## 旧状态迁移和 Primary
 

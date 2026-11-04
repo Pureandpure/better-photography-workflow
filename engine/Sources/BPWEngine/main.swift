@@ -16,9 +16,9 @@ struct Args {
         var i = 0
         while i < args.count {
             let a = args[i]
-            if ["--dry-run", "--checksum", "--json", "--progress"].contains(a) { flags.insert(a) }
+            if ["--dry-run", "--execute", "--checksum", "--json", "--progress"].contains(a) { flags.insert(a) }
             else if a.hasPrefix("--") {
-                guard ["--workspace", "--project", "--new", "--device", "--name", "--type", "--dates"].contains(a), i + 1 < args.count else { throw WorkflowError("未知参数/缺少值：\(a)") }
+                guard ["--workspace", "--project", "--new", "--device", "--recorder", "--name", "--type", "--dates"].contains(a), i + 1 < args.count else { throw WorkflowError("未知参数/缺少值：\(a)") }
                 i += 1; options[a] = args[i]
             } else { positional.append(a) }
             i += 1
@@ -118,7 +118,7 @@ func run() throws {
     case "media":
         if args.positional == ["list"] { try emit(mediaSources(volumes: store.volumes, pool: store.pool, backupPath: backup, protectedBackupVolumeIDs: store.protectedBackupVolumeIDs)); break }
         let (source, uuid) = try selectedSource(args, store: store, backup: backup)
-        let scan = try MediaScanner().scan(source, overrideDevice: args.options["--device"], volumeUUID: uuid, onProgress: args.flags.contains("--progress") ? { count in print("BPW_SCAN_PROGRESS \(count)"); fflush(stdout) } : nil)
+        let scan = try MediaScanner().scan(source, overrideDevice: args.options["--device"], overrideRecorder: args.options["--recorder"], volumeUUID: uuid, onProgress: args.flags.contains("--progress") ? { count in print("BPW_SCAN_PROGRESS \(count)"); fflush(stdout) } : nil)
         try emit(scan)
     case "imports":
         let history = try read([ImportSummary].self, state.appendingPathComponent("import-history.json"), fallback: [])
@@ -129,7 +129,7 @@ func run() throws {
         defer { try? fm.removeItem(at: cancellationURL) }
         guard args.options["--project"] == nil || args.options["--new"] == nil else { throw WorkflowError("--project 与 --new 不能同时使用") }
         let (source, uuid) = try selectedSource(args, store: store, backup: backup)
-        let scan = try MediaScanner().scan(source, overrideDevice: args.options["--device"], volumeUUID: uuid)
+        let scan = try MediaScanner().scan(source, overrideDevice: args.options["--device"], overrideRecorder: args.options["--recorder"], volumeUUID: uuid)
         let selectedDates: Set<String>?
         if let rawDates = args.options["--dates"] {
             let values = Set(rawDates.split(separator: ",").map(String.init))
@@ -154,7 +154,7 @@ func run() throws {
         var sessions = try read([Session].self, state.appendingPathComponent("sessions.json"), fallback: [])
         let matchScan = scopedScan ?? scan
         let candidates = SessionMatcher.candidates(scan: matchScan, sessions: sessions, projects: projects)
-        let engine = IngestEngine(mediaDirectory: store.projectSubdirectories.first ?? "01_MEDIA"); engine.progress = { print($0) }
+        let engine = IngestEngine(); engine.progress = { print($0) }
         engine.cancellationRequested = { fm.fileExists(atPath: cancellationURL.path) }
         if dry {
             struct Preview: Encodable { var scan: MediaScan; var dateGroups: [MediaDateGroup]; var selectedDates: [String]; var candidates: [SessionCandidate]; var plan: IngestPlan?; var workspace: String?; var destinationProjectPath: String? }
@@ -169,6 +169,7 @@ func run() throws {
         print("[Import] Scan found \(scan.fileCount) files · \(scan.dateGroups.count) capture dates")
         print("[Import] Selected dates: \(selectedDates!.sorted().joined(separator: ", "))")
         print("[Import] Scope: \(importScan.fileCount) files / \(importScan.totalBytes) bytes")
+        if !scan.orphanSidecars.isEmpty { print("未找到唯一 RAW 主文件的附属文件（不导入）：\n" + scan.orphanSidecars.joined(separator: "\n")) }
         if importScan.files.contains(where: { $0.dateSource.hasPrefix("file.") }) { print("部分拍摄时间来自文件创建/修改日期；请检查日期范围") }
         let p: ProjectRecord
         if let id = args.options["--project"] { p = try store.project(id) }
@@ -193,6 +194,16 @@ func run() throws {
         history.insert(ImportSummary(result, name: p.name), at: 0)
         try atomic(Array(history.prefix(100)), state.appendingPathComponent("import-history.json"))
         print("✓ \(scan.devices.joined(separator: ", ")) 导入完成：\(result.verifiedFileCount) files · \(result.verifiedBytes) bytes\nPrimary Workspace：\(p.workspaceId)\nProject：\(p.name)\n\(p.path)\n卡上源文件全部保留。备份请执行 bpw sync；导入成功不代表备份完成。")
+    case "migrate-media-layout":
+        guard let id = args.options["--project"], args.positional.isEmpty, !(args.flags.contains("--execute") && args.flags.contains("--dry-run")) else { throw WorkflowError("用法：migrate-media-layout --project <UUID|编号> [--dry-run|--execute] [--checksum]") }
+        let projects = try store.refresh(persist: false)
+        let project: ProjectRecord?
+        if let index = Int(id), index > 0, projects.indices.contains(index - 1) { project = projects[index - 1] }
+        else { project = projects.first { $0.id == id } }
+        guard let project, project.status == "online" else { throw WorkflowError("项目不存在或离线；请先运行 project list") }
+        let migration = MediaLayoutMigration(), url = URL(fileURLWithPath: project.path)
+        let report = try args.flags.contains("--execute") ? migration.execute(project: url, projectID: project.id, checksum: args.flags.contains("--checksum")) : migration.plan(project: url, projectID: project.id)
+        try emit(report)
     default: throw WorkflowError("未知 backend command：\(command)")
     }
 }

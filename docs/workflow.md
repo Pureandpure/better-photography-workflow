@@ -14,7 +14,7 @@ The watch LaunchAgent responds to changes in `WORK_DIR`. A `StartInterval` compe
 
 `bpw projects list` returns every real first-level project directory as JSON. The native App uses this output rather than demo data. A project moves through `ingest`, `verify`, `organize`, `edit`, `export`, `archive`, and `done`; stage and favorite changes are stored atomically in the user's private state directory, not inside the media library.
 
-Device names are inferred from first-level directories under `01_ORIGINALS`, falling back to `01_RAW`. This makes directory layouts such as `01_ORIGINALS/iPhone` and `01_ORIGINALS/Pocket3` visible in the App without touching the source files.
+Device discovery reads legacy `01_MEDIA/device`, transitional `01_MEDIA/date/device/type`, and current `01_MEDIA/type/date/device` layouts, as well as `01_ORIGINALS` and `01_RAW`. Imports place original video, photos and audio under separate `01_MEDIA/VIDEO`, `PHOTO` and `AUDIO` roots; `02_PHOTO` and `03_VIDEO` remain working directories. For Final Cut Pro select `01_MEDIA/VIDEO` and optionally `01_MEDIA/AUDIO`, choose “Leave files in place”, and optionally create keywords from folders. This has not been verified in a real FCP session. See [ingest.md](ingest.md) for migration and safety details.
 
 ## Reminders
 

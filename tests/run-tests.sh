@@ -87,7 +87,7 @@ import_project="$WORK_DIR/$(date '+%Y')/$(date '+%Y-%m-%d')_旅行 导入 & 测�
 assert "ingest preserves source" test "$(cat "$card/DCIM/DSC0001.ARW")" = 'fixture original'
 assert "ingest creates stable identity" plutil -extract id raw -o - "$import_project/.bpw-project.json"
 import_id="$(plutil -extract id raw -o - "$import_project/.bpw-project.json")"
-import_dest="$import_project/01_MEDIA/$(date '+%Y-%m-%d')/A7R5/RAW/DSC0001.ARW"
+import_dest="$import_project/01_MEDIA/PHOTO/$(date '+%Y-%m-%d')/A7R5/RAW/DSC0001.ARW"
 assert "ingest keeps original filename and device hierarchy" test -f "$import_dest"
 assert "import manifest exists" test "$(find "$import_project/.bpw/imports" -name '*.json' | wc -l | tr -d ' ')" = 1
 assert "ingest records success" grep -q '^outcome=success$' "$BPW_STATE_DIR/last-ingest.status"
@@ -102,6 +102,9 @@ if "$ROOT/bin/bpw" ingest "$card" --project "$import_id" --device A7R5 >/dev/nul
 assert "conflict preserves destination" test "$(cat "$import_dest")" = 'unknown conflict'
 assert "conflict preserves source" test "$(cat "$card/DCIM/DSC0001.ARW")" = 'fixture original'
 if "$ROOT/bin/bpw" ingest "$card" --new "dry-run 不创建" --device A7R5 --dry-run >/dev/null; then pass "CLI dry-run succeeds without choosing project"; else fail "CLI dry-run succeeds without choosing project"; fi
+if "$ROOT/bin/bpw" migrate-media-layout --project "$import_id" > "$TEST_DIR/migration-plan.json"; then pass "migration CLI defaults to plan"; else fail "migration CLI defaults to plan"; fi
+assert "migration preview does not create reports" test ! -e "$import_project/.bpw/media-layout-migrations"
+assert "migration preview retains imported file" test -f "$import_dest"
 assert "dry-run creates no project" test ! -e "$WORK_DIR/$(date '+%Y')/$(date '+%Y-%m-%d')_dry-run 不创建"
 assert "workspace list succeeds" "$ROOT/bin/bpw" workspace list
 if "$ROOT/bin/bpw" ingest "$WORK_DIR" --project "$import_id" >/dev/null 2>&1; then fail "CLI rejects workspace as source"; else pass "CLI rejects workspace as source"; fi

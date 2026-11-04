@@ -31,7 +31,8 @@ better-photography-workflow (bpw)
   media list          检测媒体卡（JSON）
   imports [--project id] 最近成功导入（JSON）
   ingest [来源路径] [--project id|--new 名称] [--workspace id]
-         [--device A7R5|Pocket3|Action6|Air3S|Unknown] [--dates yyyy-MM-dd[,yyyy-MM-dd]] [--dry-run] [--checksum]
+         [--device A7R5|Pocket3|Action6|Air3S|Unknown] [--recorder 名称] [--dates yyyy-MM-dd[,yyyy-MM-dd]] [--dry-run] [--checksum]
+  migrate-media-layout --project UUID|编号 [--dry-run|--execute] [--checksum]
   cancel-ingest       请求当前导入安全停止
   scan                扫描一级项目目录并处理新项目
   sync [--project id]  备份 online Primary 项目到已挂载硬盘
@@ -167,7 +168,7 @@ case "$command_name" in
   sync) "$BPW_ROOT/scripts/sync-projects.sh" "$@" ;;
   status) (( $# == 0 )) || { bpw_error "bpw status 不接受参数"; exit 2; }; command_status ;;
   projects|project) "$BPW_ROOT/scripts/workflow-engine.sh" "$command_name" "$@" ;;
-  workspace|media|ingest|imports|cancel-ingest) "$BPW_ROOT/scripts/workflow-engine.sh" "$command_name" "$@" ;;
+  workspace|media|ingest|imports|cancel-ingest|migrate-media-layout) "$BPW_ROOT/scripts/workflow-engine.sh" "$command_name" "$@" ;;
   doctor) (( $# == 0 )) || { bpw_error "bpw doctor 不接受参数"; exit 2; }; BPW_CLI_PATH="${0:A}" "$BPW_ROOT/scripts/doctor.sh" ;;
   logs) (( $# == 0 )) || { bpw_error "bpw logs 不接受参数"; exit 2; }; command_logs ;;
   app) command_app "$@" ;;

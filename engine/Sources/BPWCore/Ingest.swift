@@ -93,21 +93,59 @@ public final class IngestEngine {
     }
     private func same(_ file: MediaFile, source: URL, dest: URL, known: [ImportEntry], checksum: Bool) throws -> Bool {
         let sf = try fingerprint(source), df = try fingerprint(dest)
-        let destinationPath = file.destinationRelativePath(in: mediaDirectory)
-        if !checksum, known.contains(where: { $0.relativeSourcePath == file.relativeSourcePath && $0.destinationPath == destinationPath && $0.size == file.size && $0.captureTimestamp == file.captureTimestamp && $0.sourceFingerprint == sf && $0.destinationFingerprint == df }) { return true }
+        if !checksum, known.contains(where: { $0.relativeSourcePath == file.relativeSourcePath && $0.size == file.size && $0.captureTimestamp == file.captureTimestamp && $0.sourceFingerprint == sf && $0.destinationFingerprint == df }) { return true }
         let before = sf
         let srcHash = try digest(source), dstHash = try digest(dest)
         guard before == (try fingerprint(source)), df == (try fingerprint(dest)) else { throw WorkflowError("比较期间文件发生变化") }
         return srcHash == dstHash
     }
+    private func migrationMappings(_ project: URL) throws -> [String: [String]] {
+        let root = project.appendingPathComponent(".bpw/media-layout-migrations"); try safePath(root)
+        guard fm.fileExists(atPath: root.path) else { return [:] }
+        var result: [String: [String]] = [:]
+        for url in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).filter({ $0.pathExtension == "json" }).sorted(by: { $0.path < $1.path }) {
+            try safePath(url)
+            let report = try JSONDecoder().decode(MediaMigrationReport.self, from: Data(contentsOf: url))
+            guard report.schemaVersion == 1 else { throw WorkflowError("不支持的迁移报告版本") }
+            for item in report.items { result[item.oldPath, default: []].append(item.newPath) }
+        }
+        return result
+    }
+    private func destination(_ file: MediaFile, source: URL, project: URL, known: [ImportEntry], mappings: [String: [String]], checksum: Bool) throws -> (String, [String]) {
+        let target = file.destinationRelativePath(in: mediaDirectory)
+        let legacyKind = file.kind == "SIDECAR" ? "RAW" : file.kind
+        var legacy = file; legacy.kind = legacyKind
+        var candidates = [target, legacy.legacyDestinationRelativePath(in: mediaDirectory)]
+        let sourceFingerprint = try fingerprint(source)
+        candidates += known.filter { $0.relativeSourcePath == file.relativeSourcePath && $0.size == file.size && $0.captureTimestamp == file.captureTimestamp && ($0.sourceFingerprint == sourceFingerprint || $0.destinationPath.split(separator: "/").contains(Substring(file.device))) }.map(\.destinationPath)
+        var seen = Set(candidates), queue = candidates
+        while let path = queue.popLast() {
+            for mapped in mappings[path] ?? [] where seen.insert(mapped).inserted { candidates.append(mapped); queue.append(mapped) }
+        }
+        var found: [String] = [], conflicts: [String] = []
+        for path in Array(Set(candidates)).sorted() {
+            let components = path.split(separator: "/", omittingEmptySubsequences: false)
+            guard !path.hasPrefix("/"), !components.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." || $0.hasPrefix(".") }),
+                  path.hasPrefix(mediaDirectory + "/") || known.contains(where: { $0.destinationPath == path }) else { throw WorkflowError("manifest 含不安全的目标路径") }
+            let url = project.appendingPathComponent(path); try safePath(url)
+            guard fm.fileExists(atPath: url.path) else { continue }
+            if try same(file, source: source, dest: url, known: known, checksum: checksum) { found.append(path) }
+            else { conflicts.append("conflict：\(path)") }
+        }
+        return (found.contains(target) ? target : (found.first ?? target), conflicts)
+    }
     public func plan(_ scan: MediaScan, project: URL, checksum: Bool = false) throws -> IngestPlan {
         try safePath(project)
         let known = try entries(project)
+        let mappings = try migrationMappings(project)
         var destinations: [String: URL] = [:]
+        var resolved: [String: String] = [:]
         var conflicts: [String] = [], copyCount = 0, skipCount = 0, bytes: Int64 = 0
         for f in scan.files {
             let src = URL(fileURLWithPath: scan.sourcePath).appendingPathComponent(f.relativeSourcePath)
-            let relativePath = f.destinationRelativePath(in: mediaDirectory)
+            let (relativePath, existingConflicts) = try destination(f, source: src, project: project, known: known, mappings: mappings, checksum: checksum)
+            resolved[f.relativeSourcePath] = relativePath
+            conflicts += existingConflicts
             let dest = project.appendingPathComponent(relativePath); try safePath(src); try safePath(dest)
             if let prior = destinations[dest.path.lowercased()] {
                 if try digest(prior) != digest(src) { conflicts.append("同批次同名不同内容：\(relativePath)") }
@@ -119,6 +157,12 @@ public final class IngestEngine {
                 if try same(f, source: src, dest: dest, known: known, checksum: checksum) { skipCount += 1 }
                 else { conflicts.append("conflict：\(relativePath)") }
             } else { copyCount += 1; bytes += f.size }
+        }
+        for f in scan.files {
+            guard let primary = f.primarySourcePath, let sidecarPath = resolved[f.relativeSourcePath], let mainPath = resolved[primary] else { continue }
+            if URL(fileURLWithPath: sidecarPath).deletingLastPathComponent().path != URL(fileURLWithPath: mainPath).deletingLastPathComponent().path {
+                conflicts.append("主照片与 sidecar 目标不在同一目录；请先迁移旧素材：\(f.relativeSourcePath)")
+            }
         }
         return IngestPlan(copyCount: copyCount, skipCount: skipCount, copyBytes: bytes, requiredFreeBytes: bytes + max(256 * 1024 * 1024, bytes / 20), totalBytes: scan.totalBytes, conflicts: conflicts)
     }
@@ -145,12 +189,20 @@ public final class IngestEngine {
         try atomic(manifest, manifestURL)
         do {
             var known = try entries(project)
+            let mappings = try migrationMappings(project)
             let copyStarted = Date()
             var completedBytes: Int64 = 0
             for (i, f) in scan.files.enumerated() {
                 if cancellationRequested() { throw WorkflowError("导入已取消") }
+                if let primaryPath = f.primarySourcePath {
+                    guard let primary = scan.files.first(where: { $0.relativeSourcePath == primaryPath && $0.kind == "RAW" }) else { throw WorkflowError("sidecar 缺少 RAW 主文件") }
+                    let primarySource = URL(fileURLWithPath: scan.sourcePath).appendingPathComponent(primaryPath)
+                    let (primaryDestination, primaryConflicts) = try destination(primary, source: primarySource, project: project, known: known, mappings: mappings, checksum: checksum)
+                    guard primaryConflicts.isEmpty, fm.fileExists(atPath: project.appendingPathComponent(primaryDestination).path) else { throw WorkflowError("主照片冲突或缺失，未复制 sidecar：\(primaryPath)") }
+                }
                 let src = URL(fileURLWithPath: scan.sourcePath).appendingPathComponent(f.relativeSourcePath)
-                let relativePath = f.destinationRelativePath(in: mediaDirectory)
+                let (relativePath, existingConflicts) = try destination(f, source: src, project: project, known: known, mappings: mappings, checksum: checksum)
+                guard existingConflicts.isEmpty else { throw WorkflowError(existingConflicts.joined(separator: "\n")) }
                 let dest = project.appendingPathComponent(relativePath)
                 let before = try fingerprint(src)
                 let attrs = try fm.attributesOfItem(atPath: src.path)
@@ -161,9 +213,6 @@ public final class IngestEngine {
                     guard try same(f, source: src, dest: dest, known: known, checksum: checksum) else { throw WorkflowError("conflict：\(dest.path)") }
                     hash = try known.last(where: { $0.sourceFingerprint == before && $0.destinationPath == relativePath })?.sha256 ?? digest(src)
                     progress?("[\(i + 1)/\(scan.fileCount)] skip \(f.relativeSourcePath)")
-                    completedBytes += f.size
-                    let elapsed = max(0.001, Date().timeIntervalSince(copyStarted)), speed = Double(completedBytes) / elapsed
-                    report(ImportProgressEvent(stage: "copying", copiedBytes: completedBytes, totalBytes: scan.totalBytes, completedFiles: i + 1, totalFiles: scan.fileCount, currentFile: f.relativeSourcePath, bytesPerSecond: speed, etaSeconds: speed > 0 ? Double(max(0, scan.totalBytes - completedBytes)) / speed : 0))
                 } else {
                     let temp = partials.appendingPathComponent(UUID().uuidString + ".part")
                     try safePath(temp)

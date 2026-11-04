@@ -4,6 +4,10 @@
 
 项目只使用 macOS 原生能力：SwiftUI、zsh、AppleScript、Reminders、launchd、rsync 及系统命令；同时支持 Apple Silicon 与 Intel Mac，也不会直接读写 Apple Photos Library 的内部文件。
 
+## 素材目录和 Final Cut Pro
+
+新导入使用 `01_MEDIA/VIDEO/<日期>/<设备>`、`01_MEDIA/PHOTO/<日期>/<设备>/RAW|JPEG` 和 `01_MEDIA/AUDIO/<日期>/<录音设备>`。Final Cut Pro 选择 `01_MEDIA/VIDEO`，需要时同时选择 `01_MEDIA/AUDIO`；选择“让文件保留在原位”，按需启用“从文件夹创建关键词”。尚未进行真实 FCP 验证。使用 `bpw migrate-media-layout --project <UUID>` 预览单个旧项目，确认后添加 `--execute` 执行，详见[导入说明](docs/ingest.md)。
+
 ## 素材导入 MVP
 
 已增加稳定 Project ID、多 Workspace、媒体扫描、复制导入、manifest、重复保护、Session 匹配和 Primary 项目备份。今晚使用步骤、配置、迁移和实测边界见 [素材导入说明](docs/ingest.md)。
