@@ -110,9 +110,15 @@ public final class MediaLayoutMigration {
             let relative = String(u.path.dropFirst(project.path.count + 1)), stem = u.deletingPathExtension().lastPathComponent.lowercased()
             let matches = report.items.filter { item in
                 let main = URL(fileURLWithPath: item.oldPath), side = URL(fileURLWithPath: relative)
-                return item.kind == "RAW" && main.deletingLastPathComponent().path == side.deletingLastPathComponent().path && main.deletingPathExtension().lastPathComponent.lowercased() == stem
+                return ["RAW", "JPEG"].contains(item.kind) && main.deletingLastPathComponent().path == side.deletingLastPathComponent().path && main.deletingPathExtension().lastPathComponent.lowercased() == stem
             }
-            guard matches.count == 1, let main = matches.first else { report.orphanSidecars.append(relative); continue }
+            let rawMatches = matches.filter { $0.kind == "RAW" }
+            let preferred = rawMatches.isEmpty ? matches : rawMatches
+            guard preferred.count == 1, let main = preferred.first else {
+                report.orphanSidecars.append(relative)
+                if !matches.isEmpty { report.conflicts.append("附属文件对应多个主照片，不能安全迁移：\(relative)") }
+                continue
+            }
             let new = main.newPath.split(separator: "/").dropLast().joined(separator: "/") + "/" + u.lastPathComponent
             let size = (try u.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
             report.items.append(MediaMigrationItem(oldPath: relative, newPath: new, date: main.date, device: main.device, kind: "SIDECAR", size: Int64(size), primaryPath: main.oldPath, status: relative == new ? "already" : "planned"))

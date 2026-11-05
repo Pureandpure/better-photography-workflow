@@ -58,6 +58,34 @@ final class MediaLayoutTests: XCTestCase {
         _ = try migration.execute(project: project, projectID: "test")
         XCTAssertFalse(fm.fileExists(atPath: old.path)); XCTAssertEqual(try Data(contentsOf: new), Data("same".utf8))
     }
+    func testJPEGEditFollowsUniquePhotoDuringMigration() throws {
+        let old = "01_MEDIA/Air3S/"
+        try write(project, old + "image.JPG", "photo")
+        try write(project, old + "image.photo-edit", "edit")
+        let migration = MediaLayoutMigration(), plan = try migration.plan(project: project, projectID: "test")
+        let main = try XCTUnwrap(plan.items.first { $0.kind == "JPEG" })
+        let side = try XCTUnwrap(plan.items.first { $0.kind == "SIDECAR" })
+        XCTAssertEqual(side.primaryPath, main.oldPath)
+        XCTAssertEqual((side.newPath as NSString).deletingLastPathComponent, (main.newPath as NSString).deletingLastPathComponent)
+        XCTAssertTrue(plan.orphanSidecars.isEmpty); XCTAssertTrue(plan.conflicts.isEmpty)
+        _ = try migration.execute(project: project, projectID: "test")
+        XCTAssertEqual(try Data(contentsOf: project.appendingPathComponent(side.newPath)), Data("edit".utf8))
+    }
+    func testAmbiguousJPEGSidecarBlocksMigration() throws {
+        let old = "01_MEDIA/2026-09-30/A7R5/JPEG/"
+        try write(project, old + "a.jpg", "one"); try write(project, old + "a.heic", "two"); try write(project, old + "a.photo-edit", "edit")
+        let migration = MediaLayoutMigration(), plan = try migration.plan(project: project, projectID: "test")
+        XCTAssertEqual(plan.orphanSidecars, [old + "a.photo-edit"]); XCTAssertFalse(plan.conflicts.isEmpty)
+        XCTAssertThrowsError(try migration.execute(project: project, projectID: "test"))
+        XCTAssertTrue(fm.fileExists(atPath: project.appendingPathComponent(old + "a.jpg").path))
+    }
+    func testSidecarPrefersUniqueRawWhenJPEGSharesBasename() throws {
+        let old = "01_MEDIA/2026-09-30/A7R5/RAW/"
+        try write(project, old + "a.ARW"); try write(project, old + "a.JPG"); try write(project, old + "a.xmp")
+        let plan = try MediaLayoutMigration().plan(project: project, projectID: "test")
+        XCTAssertEqual(plan.items.first { $0.kind == "SIDECAR" }?.primaryPath, old + "a.ARW")
+        XCTAssertTrue(plan.conflicts.isEmpty)
+    }
     func testLegacyDuplicateAndMigrationKeepManifest() throws {
         try write(card, "a.ARW")
         let scan = try MediaScanner(metadata: LayoutMetadata()).scan(card), f = scan.files[0]

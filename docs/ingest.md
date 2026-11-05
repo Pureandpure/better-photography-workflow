@@ -109,6 +109,8 @@ Final Cut Pro 推荐选择 `01_MEDIA/VIDEO`，需要独立录音时按需同时�
 
 来源中同目录、同 basename 且唯一对应 RAW 的 `.xmp` 和 `.photo-edit` 一起复制到 RAW 目录，计入 manifest、数量和校验；无对应或有多个对应 RAW 的附属文件在扫描报告中列出，不能自动归属。旧 manifest 不会重写；重复导入会检查旧位置和 manifest 记录的位置。若旧主文件与新附属文件不在同一目录，先迁移项目。
 
+迁移旧项目时，若同目录没有对应 RAW，但同 basename 唯一对应一张 JPEG/HEIC 等图片，附属文件与该图片一起迁入 JPEG 目录，避免编辑文件与主照片分离。有多个可能主文件时会报告冲突并停止迁移。
+
 ```zsh
 bpw project list
 bpw migrate-media-layout --project <UUID>            # 仅规划，不移动
